@@ -31,11 +31,11 @@ int main(int argc, char *argv[]) {
 
   auto clik_node = rclcpp::Node::make_shared("clik_node");
   clik_node->declare_parameter<double>("t_camp", 0.01);
-  clik_node->declare_parameter<double>("gamma", 2);
+  clik_node->declare_parameter<double>("gamma", 0.1);
 
-  clik_node->declare_parameter<double>("x", 0.088);
+  clik_node->declare_parameter<double>("x", 0.5);
   clik_node->declare_parameter<double>("y", 0);
-  clik_node->declare_parameter<double>("z", 0.926);
+  clik_node->declare_parameter<double>("z", 0.1);
 
   rclcpp::Client<CLIK>::SharedPtr clik_client = clik_node->create_client<CLIK>(
       panda_interface_names::clik_service_name, client_qos);
@@ -47,8 +47,9 @@ int main(int argc, char *argv[]) {
   final_pose.position.y = clik_node->get_parameter("y").as_double();
   final_pose.position.z = clik_node->get_parameter("z").as_double();
 
-  Eigen::Quaterniond final_quat{0, 1, 0, 0};
+  Eigen::Quaterniond final_quat{0.70711, 0.70711, 0, 0};
   final_quat.normalize();
+  final_pose.orientation.w = final_quat.w();
   final_pose.orientation.x = final_quat.x();
   final_pose.orientation.y = final_quat.y();
   final_pose.orientation.z = final_quat.z();
@@ -56,7 +57,10 @@ int main(int argc, char *argv[]) {
 
   request->params.gamma = clik_node->get_parameter("gamma").as_double();
   request->params.t_camp = clik_node->get_parameter("t_camp").as_double();
-  request->params.iters = 100;
+  request->params.iters = 200;
+  // request->params.speed[0] = 0.1;
+  // request->params.speed[1] = 0.1;
+  // request->params.speed[2] = 0.1;
 
   while (!clik_client->wait_for_service(1s)) {
     RCLCPP_INFO(clik_node->get_logger(), "CLIK service not ready yet");

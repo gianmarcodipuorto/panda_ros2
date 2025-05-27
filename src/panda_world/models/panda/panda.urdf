@@ -15,11 +15,58 @@
   </gazebo>
 
   <gazebo>
+    <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system">
+        <joint_name>fp3_joint1</joint_name>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system">
+        <joint_name>fp3_joint2</joint_name>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system">
+        <joint_name>fp3_joint3</joint_name>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system">
+        <joint_name>fp3_joint4</joint_name>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system">
+        <joint_name>fp3_joint5</joint_name>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system">
+        <joint_name>fp3_joint6</joint_name>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system">
+        <joint_name>fp3_joint7</joint_name>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
     <plugin
        filename="gz-sim-joint-position-controller-system"
        name="gz::sim::systems::JointPositionController">
       <joint_name>fp3_joint1</joint_name>
       <joint_index>0</joint_index>
+      <p_gain>100.0</p_gain>
+      <d_gain>40.0</d_gain>
+      <i_gain>0.0</i_gain>
+      <i_max>2.7437</i_max>
+      <i_min>-2.7437</i_min>
     </plugin>
   </gazebo>
 
@@ -29,6 +76,11 @@
        name="gz::sim::systems::JointPositionController">
       <joint_name>fp3_joint2</joint_name>
       <joint_index>0</joint_index>
+      <p_gain>100.0</p_gain>
+      <d_gain>40.0</d_gain>
+      <i_gain>0.0</i_gain>
+      <i_max>2.7437</i_max>
+      <i_min>-2.7437</i_min>
     </plugin>
   </gazebo>
 
@@ -38,6 +90,11 @@
        name="gz::sim::systems::JointPositionController">
       <joint_name>fp3_joint3</joint_name>
       <joint_index>0</joint_index>
+      <p_gain>100.0</p_gain>
+      <d_gain>40.0</d_gain>
+      <i_gain>0.0</i_gain>
+      <i_max>2.7437</i_max>
+      <i_min>-2.7437</i_min>
     </plugin>
   </gazebo>
 
@@ -47,6 +104,11 @@
        name="gz::sim::systems::JointPositionController">
       <joint_name>fp3_joint4</joint_name>
       <joint_index>0</joint_index>
+      <p_gain>100.0</p_gain>
+      <d_gain>40.0</d_gain>
+      <i_gain>0.0</i_gain>
+      <i_max>2.7437</i_max>
+      <i_min>-2.7437</i_min>
     </plugin>
   </gazebo>
     
@@ -56,6 +118,11 @@
        name="gz::sim::systems::JointPositionController">
       <joint_name>fp3_joint5</joint_name>
       <joint_index>0</joint_index>
+      <p_gain>100.0</p_gain>
+      <d_gain>40.0</d_gain>
+      <i_gain>0.0</i_gain>
+      <i_max>2.7437</i_max>
+      <i_min>-2.7437</i_min>
     </plugin>
   </gazebo>
 
@@ -65,6 +132,11 @@
        name="gz::sim::systems::JointPositionController">
       <joint_name>fp3_joint6</joint_name>
       <joint_index>0</joint_index>
+      <p_gain>100.0</p_gain>
+      <d_gain>40.0</d_gain>
+      <i_gain>0.0</i_gain>
+      <i_max>2.7437</i_max>
+      <i_min>-2.7437</i_min>
     </plugin>
   </gazebo>
     
@@ -74,6 +146,11 @@
        name="gz::sim::systems::JointPositionController">
       <joint_name>fp3_joint7</joint_name>
       <joint_index>0</joint_index>
+      <p_gain>100.0</p_gain>
+      <d_gain>40.0</d_gain>
+      <i_gain>0.0</i_gain>
+      <i_max>2.7437</i_max>
+      <i_min>-2.7437</i_min>
     </plugin>
   </gazebo>
   
@@ -416,7 +493,7 @@
       <inertia ixx="8.49e-06" ixy="0.0" ixz="0.0" iyy="8.53e-06" iyz="-1.06e-06" izz="1.77e-06" />
     </inertial>
   </link>
-  <joint name="fp3_finger_joint1" type="prismatic">
+  <joint name="fp3_finger_joint1" type="fixed">
     <parent link="fp3_hand" />
     <child link="fp3_leftfinger" />
     <origin rpy="0 0 0" xyz="0 0 0.0584" />
@@ -424,13 +501,12 @@
     <limit effort="100" lower="0.0" upper="0.04" velocity="0.2" />
     <dynamics damping="0.3" />
   </joint>
-  <joint name="fp3_finger_joint2" type="prismatic">
+  <joint name="fp3_finger_joint2" type="fixed">
     <parent link="fp3_hand" />
     <child link="fp3_rightfinger" />
     <origin rpy="0 0 3.141592653589793" xyz="0 0 0.0584" />
     <axis xyz="0 1 0" />
     <limit effort="100" lower="0.0" upper="0.04" velocity="0.2" />
-    <mimic joint="fp3_finger_joint1" />
     <dynamics damping="0.3" />
 </joint>
 </robot>

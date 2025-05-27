@@ -29,7 +29,7 @@ from launch.substitutions import PathJoinSubstitution
 def generate_launch_description():
 
     # ''use_sim_time'' is used to have ros2 use /clock topic for the time source
-    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
+    use_sim_time = LaunchConfiguration('use_sim_time', default='true')
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_panda_world = get_package_share_directory('panda_world')
 

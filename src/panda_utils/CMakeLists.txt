@@ -18,29 +18,44 @@ include_directories(
   include
 )
 
+# add_library(robot ./include/panda_utils/robot.hpp)
+# ament_target_dependencies(robot rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs)
+
+# add_library(constants ./include/panda_utils/constants.hpp)
+# ament_target_dependencies(constants tf2_eigen tf2 tf2_msgs)
+# target_link_libraries(constants robot)
+
 add_executable(send_joints_cmd_server ./src/send_joints_pos_cmd.cpp)
-ament_target_dependencies(send_joints_cmd_server rclcpp panda_interfaces std_msgs)
+ament_target_dependencies(send_joints_cmd_server rclcpp panda_interfaces std_msgs tf2_eigen)
+# target_link_libraries(send_joints_cmd_server constants)
 
 add_executable(send_joints_cmd_simple_client ./src/send_joints_pos_cmd_client.cpp)
-ament_target_dependencies(send_joints_cmd_simple_client rclcpp panda_interfaces std_msgs)
+ament_target_dependencies(send_joints_cmd_simple_client rclcpp panda_interfaces std_msgs tf2_eigen)
+# target_link_libraries(send_joints_cmd_simple_client constants)
 
 add_executable(calc_jacobian_server ./src/jacobian_server.cpp)
 ament_target_dependencies(calc_jacobian_server rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs)
+# target_link_libraries(calc_jacobian_server constants)
 
 add_executable(calc_jacobian_client ./src/jacobian_client.cpp)
 ament_target_dependencies(calc_jacobian_client rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs)
+# target_link_libraries(calc_jacobian_client constants)
 
 add_executable(calc_forward_kine_server ./src/forward_kine_server.cpp)
 ament_target_dependencies(calc_forward_kine_server rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs)
+# target_link_libraries(calc_forward_kine_server robot)
 
 add_executable(calc_forward_kine_client ./src/forward_kine_client.cpp)
 ament_target_dependencies(calc_forward_kine_client rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs)
+# target_link_libraries(calc_forward_kine_client constants)
 
 add_executable(calc_clik_server ./src/clik_server.cpp)
 ament_target_dependencies(calc_clik_server rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs)
+# target_link_libraries(calc_clik_server constants)
 
 add_executable(calc_clik_client ./src/clik_client.cpp)
 ament_target_dependencies(calc_clik_client rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs)
+# target_link_libraries(calc_clik_client constants)
 
 install(TARGETS
   send_joints_cmd_server
@@ -59,6 +74,9 @@ install(
     launch/
   DESTINATION share/${PROJECT_NAME}/launch
 )
+
+ament_export_include_directories(include)
+ament_export_dependencies(tf2_eigen)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
