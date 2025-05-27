@@ -2,7 +2,10 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include <rclcpp/logging.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/timer.hpp>
 #include <string>
+
+using namespace std::chrono_literals;
 
 class JointStateEffortPatcher : public rclcpp::Node {
 public:
@@ -20,7 +23,10 @@ public:
         "/joint_states_no_effort", 10,
         std::bind(&JointStateEffortPatcher::joint_states_callback, this,
                   std::placeholders::_1));
-
+    auto publish_joint_states = [this]() {
+      joint_states_pub_->publish(this->last_mess);
+    };
+    timer = this->create_wall_timer(10ms, publish_joint_states);
   }
 
 private:
@@ -29,10 +35,10 @@ private:
       this->efforts[i] = msg.effort_values[i];
     }
     RCLCPP_DEBUG_STREAM(this->get_logger(),
-                       "Efforts: " << efforts[0] << ", " << efforts[1] << ", "
-                                   << efforts[2] << ", " << efforts[3] << ", "
-                                   << efforts[4] << ", " << efforts[5] << ", "
-                                   << efforts[6]);
+                        "Efforts: " << efforts[0] << ", " << efforts[1] << ", "
+                                    << efforts[2] << ", " << efforts[3] << ", "
+                                    << efforts[4] << ", " << efforts[5] << ", "
+                                    << efforts[6]);
   }
 
   void
@@ -49,6 +55,7 @@ private:
       fixed_msg.effort[i] = this->efforts[i];
     }
 
+    last_mess = fixed_msg;
     joint_states_pub_->publish(fixed_msg);
   }
 
@@ -57,8 +64,9 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr
       joint_states_sub_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_pub_;
-
+  rclcpp::TimerBase::SharedPtr timer;
   double efforts[7]{};
+  sensor_msgs::msg::JointState last_mess{};
 };
 
 int main(int argc, char **argv) {
