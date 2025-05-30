@@ -22,6 +22,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "./srv/ForwardKine.srv"
   "./msg/CLIKParameters.msg"
   "./srv/CLIK.srv"
+  "./action/CartTraj.action"
+  "./action/JointTraj.action"
   DEPENDENCIES tf2_msgs geometry_msgs
 )
 

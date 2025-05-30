@@ -3,6 +3,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include <memory>
+#include <rclcpp/create_timer.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/node.hpp>
 #include <rclcpp/publisher.hpp>
@@ -11,7 +12,6 @@
 #include <rclcpp/timer.hpp>
 #include <rclcpp/utilities.hpp>
 #include <vector>
-#include "chrono"
 
 using namespace std::chrono_literals;
 
@@ -41,6 +41,7 @@ public:
         effort.data = efforts[i];
         pub->publish(effort);
       }
+      RCLCPP_INFO(this->get_logger(), "Sent effort command");
     };
 
     joints_effort_sub =
@@ -53,7 +54,7 @@ public:
         "Created subscriber to "
             << panda_interface_names::panda_effort_cmd_topic_name);
 
-    timer = this->create_wall_timer(10ms, send_joints_effort);
+    timer = rclcpp::create_timer(this, this->get_clock(), 10ns, send_joints_effort);
   }
 
 private:

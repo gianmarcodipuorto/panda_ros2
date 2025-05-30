@@ -1,5 +1,6 @@
 #include "panda_interfaces/msg/joints_effort.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include <rclcpp/create_timer.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/timer.hpp>
@@ -26,7 +27,7 @@ public:
     auto publish_joint_states = [this]() {
       joint_states_pub_->publish(this->last_mess);
     };
-    timer = this->create_wall_timer(10ms, publish_joint_states);
+    timer = rclcpp::create_timer(this, this->get_clock(), 1ms, publish_joint_states);
   }
 
 private:

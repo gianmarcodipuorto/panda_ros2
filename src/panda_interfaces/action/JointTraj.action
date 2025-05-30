@@ -1,0 +1,6 @@
+float64[] desired_joint_pos
+float64 total_time
+---
+bool completed
+---
+float64 time_left

@@ -97,8 +97,6 @@ public:
       panda_interfaces::msg::JacobianMatrix jacob;
       this->fill_jacob_with_isoms(*links_transforms, jacob);
       this->jacobian_publisher->publish(jacob);
-      RCLCPP_INFO(this->get_logger(), "Published jacobian on %s",
-                  jacob_topic.c_str());
     };
 
     RCLCPP_INFO(this->get_logger(),
