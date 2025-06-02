@@ -13,6 +13,63 @@
   gz_type_name: "gz.msgs.Model"
   direction: GZ_TO_ROS
 
+# Topic for rgbd camera (kinect)
+- ros_topic_name: "/rgbd_camera"
+  gz_topic_name: "/rgbd_camera"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/rgbd_camera/points"
+  gz_topic_name: "/rgbd_camera/points"
+  ros_type_name: "sensor_msgs/msg/PointCloud2"
+  gz_type_name: "gz.msgs.PointCloudPacked"
+  direction: GZ_TO_ROS
+
+# Force-torque sensors 
+- ros_topic_name: "/joint1/force_torque_sensor"
+  gz_topic_name: "fr3_joint1/force_torque_sensor"
+  ros_type_name: "geometry_msgs/msg/WrenchStamped"
+  gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/joint2/force_torque_sensor"
+  gz_topic_name: "fr3_joint2/force_torque_sensor"
+  ros_type_name: "geometry_msgs/msg/WrenchStamped"
+  gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/joint3/force_torque_sensor"
+  gz_topic_name: "fr3_joint3/force_torque_sensor"
+  ros_type_name: "geometry_msgs/msg/WrenchStamped"
+  gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/joint4/force_torque_sensor"
+  gz_topic_name: "fr3_joint4/force_torque_sensor"
+  ros_type_name: "geometry_msgs/msg/WrenchStamped"
+  gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/joint5/force_torque_sensor"
+  gz_topic_name: "fr3_joint5/force_torque_sensor"
+  ros_type_name: "geometry_msgs/msg/WrenchStamped"
+  gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/joint6/force_torque_sensor"
+  gz_topic_name: "fr3_joint6/force_torque_sensor"
+  ros_type_name: "geometry_msgs/msg/WrenchStamped"
+  gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/joint7/force_torque_sensor"
+  gz_topic_name: "fr3_joint7/force_torque_sensor"
+  ros_type_name: "geometry_msgs/msg/WrenchStamped"
+  gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
+
+
 # Topic accpeting joint cmd in position
 - ros_topic_name: "/joint1/cmd_pos"
   gz_topic_name: "/model/panda/joint/fr3_joint1/0/cmd_pos"

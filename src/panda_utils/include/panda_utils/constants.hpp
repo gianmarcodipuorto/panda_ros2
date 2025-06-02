@@ -27,6 +27,7 @@ const std::string panda_effort_cmd_topic_name{"/panda/cmd/effort"};
 const std::string panda_pos_cmd_topic_name{"/panda/cmd/joint_pos"};
 const std::string panda_pose_cmd_topic_name{"/panda/cmd/pose"};
 const std::string joint_state_topic_name{"/joint_states"};
+const std::string force_torque_sensor_topic_name{"/ft_sensors"};
 const std::string start_and_stop_clik_topic_name{"/clik_ctrl"};
 
 /////////////////////////////////////////////////////////////

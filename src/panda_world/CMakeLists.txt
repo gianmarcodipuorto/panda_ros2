@@ -14,8 +14,12 @@ find_package(panda_interfaces REQUIRED)
 add_executable(joint_state_publisher_effort_patcher ./src/joint_state_publisher_effort_patcher.cpp)
 ament_target_dependencies(joint_state_publisher_effort_patcher rclcpp sensor_msgs panda_interfaces)
 
+add_executable(force_torque_sensor_publisher ./src/force_torque_sensors_publisher.cpp)
+ament_target_dependencies(force_torque_sensor_publisher rclcpp sensor_msgs panda_interfaces)
+
 install(TARGETS
   joint_state_publisher_effort_patcher
+  force_torque_sensor_publisher
   DESTINATION lib/${PROJECT_NAME}
 )
 

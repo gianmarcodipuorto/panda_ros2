@@ -87,6 +87,15 @@ def generate_launch_description():
         output='screen'
     )
 
+    force_torque_publisher = Node(
+        package='panda_world',
+        executable='force_torque_sensor_publisher',
+        parameters=[{
+            'use_sim_time': use_sim_time
+        }],
+        output='screen'
+    )
+
     world = LaunchConfiguration('world')
     file = LaunchConfiguration('file')
     model_string = LaunchConfiguration('model_string')
@@ -159,5 +168,6 @@ def generate_launch_description():
     # ld.add_action(robot_state)
     ld.add_action(bridge)
     ld.add_action(joint_state_publisher_patched)
+    ld.add_action(force_torque_publisher)
 
     return ld

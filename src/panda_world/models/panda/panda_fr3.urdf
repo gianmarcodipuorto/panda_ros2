@@ -88,48 +88,6 @@
     </plugin>
   </gazebo>
 
-  <!-- <gazebo> -->
-  <!--   <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system"> -->
-  <!--       <joint_name>fr3_joint1</joint_name> -->
-  <!--   </plugin> -->
-  <!-- </gazebo> -->
-  <!---->
-  <!-- <gazebo> -->
-  <!--   <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system"> -->
-  <!--       <joint_name>fr3_joint2</joint_name> -->
-  <!--   </plugin> -->
-  <!-- </gazebo> -->
-  <!---->
-  <!-- <gazebo> -->
-  <!--   <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system"> -->
-  <!--       <joint_name>fr3_joint3</joint_name> -->
-  <!--   </plugin> -->
-  <!-- </gazebo> -->
-  <!---->
-  <!-- <gazebo> -->
-  <!--   <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system"> -->
-  <!--       <joint_name>fr3_joint4</joint_name> -->
-  <!--   </plugin> -->
-  <!-- </gazebo> -->
-  <!---->
-  <!-- <gazebo> -->
-  <!--   <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system"> -->
-  <!--       <joint_name>fr3_joint5</joint_name> -->
-  <!--   </plugin> -->
-  <!-- </gazebo> -->
-  <!---->
-  <!-- <gazebo> -->
-  <!--   <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system"> -->
-  <!--       <joint_name>fr3_joint6</joint_name> -->
-  <!--   </plugin> -->
-  <!-- </gazebo> -->
-  <!---->
-  <!-- <gazebo> -->
-  <!--   <plugin name="gz::sim::systems::ApplyJointForce" filename="gz-sim-apply-joint-force-system"> -->
-  <!--       <joint_name>fr3_joint7</joint_name> -->
-  <!--   </plugin> -->
-  <!-- </gazebo> -->
-
   <!-- safety_distance: Minimum safety distance in [m] by which the collision volumes are expanded and which is enforced during robot motions -->
   <!-- arm_id: Namespace of the robot arm. Serves to differentiate between arms in case of multiple instances. -->
   <!-- joint_limits: description of the joint limits that comes from a YAML file. Example definition: ${xacro.load_yaml('$(find franka_description)/robots/fr3/joint_limits.yaml')} -->
@@ -173,19 +131,6 @@
       <inertia ixx="0.023927316485107913" ixy="1.3317903455714081e-05" ixz="-0.00011404774918616684" iyy="0.0224821613275756" iyz="-0.0019950320628240115" izz="0.006350098258530016"/>
     </inertial>
 
-    <gazebo>
-        <sensor name="ft_sensor_joint1" type="force_torque">
-          <topic>/ft_sensor_joint1</topic>
-          <pose>0 0 0 0 0 0</pose>
-          <always_on>true</always_on>
-          <update_rate>1000</update_rate>
-          <visualize>false</visualize>
-          <force_torque>
-            <frame>child</frame> <!-- Can be "parent", "child", or "sensor" -->
-            <measure_direction>child_to_parent</measure_direction>
-          </force_torque>
-        </sensor>
-    </gazebo>
 
   </link>
   <joint name="fr3_joint1" type="revolute">
@@ -196,6 +141,7 @@
     <limit effort="87.0" lower="-2.7437" upper="2.7437" velocity="2.62"/>
     <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-2.7437" soft_upper_limit="2.7437"/>
     <dynamics D="1" K="7000" damping="0.003" friction="0.2" mu_coulomb="0" mu_viscous="16"/>
+
 
   </joint>
   <!-- sub-link defining detailed meshes for collision with environment -->
@@ -496,9 +442,108 @@
   </joint>
   <link name="world"/>
   <joint name="world_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="0 0 0.75"/>
     <parent link="world"/>
     <child link="fr3_link0"/>
   </joint>
+
+
+    <gazebo reference="fr3_joint1">
+      <sensor name="torque_sensor1" type="force_torque">
+        <pose>0 0 0  0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint1/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="fr3_joint2">
+      <sensor name="torque_sensor2" type="force_torque">
+        <pose>0 0 0  0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint2/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="fr3_joint3">
+      <sensor name="torque_sensor3" type="force_torque">
+        <pose>0 0 0  0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint3/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="fr3_joint4">
+      <sensor name="torque_sensor4" type="force_torque">
+        <pose>0 0 0  0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint4/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="fr3_joint5">
+      <sensor name="torque_sensor5" type="force_torque">
+        <pose>0 0 0  0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint5/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="fr3_joint6">
+      <sensor name="torque_sensor6" type="force_torque">
+        <pose>0 0 0  0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint6/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="fr3_joint7">
+      <sensor name="torque_sensor7" type="force_torque">
+        <pose>0 0 0  0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint7/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </gazebo>
 
 </robot>

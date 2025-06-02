@@ -49,22 +49,22 @@ def generate_launch_description():
         description='Clamp effort control from controller'
     )
 
-    jacobian_calculator = Node(
-        package='panda_utils',
-        executable='calc_jacobian_server',
-        name='jacobian_calculator',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-        }],
-    )
-    forward_kine = Node(
-        package='panda_utils',
-        executable='calc_forward_kine_server',
-        name='forward_kine',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-        }],
-    )
+    # jacobian_calculator = Node(
+    #     package='panda_utils',
+    #     executable='calc_jacobian_server',
+    #     name='jacobian_calculator',
+    #     parameters=[{
+    #         'use_sim_time': use_sim_time,
+    #     }],
+    # )
+    # forward_kine = Node(
+    #     package='panda_utils',
+    #     executable='calc_forward_kine_server',
+    #     name='forward_kine',
+    #     parameters=[{
+    #         'use_sim_time': use_sim_time,
+    #     }],
+    # )
     pos_cmds_joints = Node(
         package='panda_utils',
         executable='send_joints_cmd_server',
@@ -127,8 +127,6 @@ def generate_launch_description():
         clamp_effort_control,
         clik_ts,
         clik_gamma,
-        forward_kine,
-        jacobian_calculator,
         pos_cmds_joints,
         effort_cmd_server,
         joint_traj_server,

@@ -24,6 +24,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "./srv/CLIK.srv"
   "./action/CartTraj.action"
   "./action/JointTraj.action"
+  "./msg/WrenchArray.msg"
   DEPENDENCIES tf2_msgs geometry_msgs
 )
 
