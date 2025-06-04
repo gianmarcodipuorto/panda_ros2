@@ -69,6 +69,10 @@ add_executable(pd_grav_controller ./src/pd_grav_controller.cpp)
 ament_target_dependencies(pd_grav_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 target_link_libraries(pd_grav_controller robot_model)
 
+add_executable(inverse_dynamics_controller ./src/inverse_dynamics_controller.cpp)
+ament_target_dependencies(inverse_dynamics_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+target_link_libraries(inverse_dynamics_controller robot_model)
+
 add_executable(pd_grav_controller_demo ./examples/demo_pd_grav.cpp)
 ament_target_dependencies(pd_grav_controller_demo rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 target_link_libraries(pd_grav_controller_demo robot_model)
@@ -85,6 +89,7 @@ install(TARGETS
   pinocchio_example
   pd_grav_controller
   pd_grav_controller_demo
+  inverse_dynamics_controller
   DESTINATION lib/${PROJECT_NAME}
 )
 

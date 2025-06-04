@@ -1,4 +1,6 @@
 #include "panda_utils/robot_model.hpp"
+#include "algorithm/frames.hpp"
+#include "algorithm/jacobian.hpp"
 #include <fstream>
 #include <pinocchio/algorithm/center-of-mass.hpp>
 #include <pinocchio/parsers/urdf.hpp>
@@ -25,8 +27,7 @@ RobotModel::RobotModel(const std::string &urdf_param_or_path,
 }
 
 Eigen::MatrixXd RobotModel::getMassMatrix(const Eigen::VectorXd &q) {
-  pinocchio::crba(model_, data_, q);
-  return data_.M;
+  return pinocchio::crba(model_, data_, q);
 }
 
 Eigen::VectorXd RobotModel::getGravityVector(const Eigen::VectorXd &q) {
@@ -43,6 +44,53 @@ Eigen::VectorXd RobotModel::getCoriolisCentrifugal(const Eigen::VectorXd &q,
   return getNonLinearEffects(q, v) - getGravityVector(q);
 }
 
+Eigen::VectorXd
+RobotModel::computeHessianTimesQDot(const Eigen::VectorXd &q,
+                                    const Eigen::VectorXd &q_dot,
+                                    const pinocchio::FrameIndex &frame_id) {
+  pinocchio::computeJointJacobians(model_, data_, q);
+  pinocchio::computeJointJacobiansTimeVariation(model_, data_, q, q_dot);
+
+  Eigen::MatrixXd Jdot(6, model_.nv);
+  pinocchio::getFrameJacobianTimeVariation(model_, data_, frame_id,
+                                           pinocchio::LOCAL, Jdot);
+
+  return Jdot * q_dot;
+}
+
+Eigen::MatrixXd
+RobotModel::computeAnalyticalJacobian(const Eigen::VectorXd &q,
+                                      const pinocchio::FrameIndex &frame_id) {
+  // 1. Forward kinematics
+  pinocchio::forwardKinematics(model_, data_, q);
+  pinocchio::updateFramePlacements(model_, data_);
+
+  // 2. Geometric Jacobian
+  Eigen::MatrixXd J_geo(6, model_.nv);
+  pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL, J_geo);
+
+  // 3. Rotation matrix
+  const Eigen::Matrix3d &R = data_.oMf[frame_id].rotation();
+
+  // 4. Compute roll-pitch-yaw angles
+  Eigen::Vector3d rpy = R.eulerAngles(2, 1, 0).reverse(); // ZYX → XYZ
+
+  // 5. Compute T_inv (angular velocity to RPY rate)
+  double roll = rpy(0), pitch = rpy(1);
+
+  Eigen::Matrix3d T_inv;
+  T_inv << 1, std::sin(roll) * std::tan(pitch),
+      std::cos(roll) * std::tan(pitch), 0, std::cos(roll), -std::sin(roll), 0,
+      std::sin(roll) / std::cos(pitch), std::cos(roll) / std::cos(pitch);
+
+  // 6. Compose analytical Jacobian
+  Eigen::MatrixXd J_ana(6, model_.nv);
+  J_ana.topRows(3) = J_geo.bottomRows(3);         // Linear part unchanged
+  J_ana.bottomRows(3) = T_inv * J_geo.topRows(3); // Transform angular velocity
+
+  return J_ana;
+}
+
 void RobotModel::computeForwardKinematics(const Eigen::VectorXd &q,
                                           const Eigen::VectorXd &v) {
   if (v.size() == model_.nv)
@@ -54,16 +102,49 @@ void RobotModel::computeForwardKinematics(const Eigen::VectorXd &q,
 
 pinocchio::SE3 RobotModel::getFramePose(const std::string &frame_name) {
   pinocchio::FrameIndex id = model_.getFrameId(frame_name);
+  for (auto frame : data_.oMf) {
+    std::cout << frame;
+  }
   return data_.oMf[id];
+}
+
+pinocchio::SE3
+RobotModel::getFramePoseInBase(const std::string &frame_name,
+                               const std::string &base_joint_name) {
+  pinocchio::FrameIndex frame_id = model_.getFrameId(frame_name);
+  pinocchio::JointIndex base_joint_id = model_.getJointId(base_joint_name);
+
+  const pinocchio::SE3 &T_world_to_frame = data_.oMf[frame_id];
+  const pinocchio::SE3 &T_world_to_base = data_.oMi[base_joint_id];
+
+  // Pose del frame rispetto alla base
+  return T_world_to_base.inverse() * T_world_to_frame;
 }
 
 void RobotModel::computeAll(const Eigen::VectorXd &q,
                             const Eigen::VectorXd &v) {
   pinocchio::computeAllTerms(model_, data_, q, v);
   pinocchio::updateFramePlacements(model_, data_);
+  pinocchio::computeJointJacobians(model_, data_, q);
+  pinocchio::computeJointJacobiansTimeVariation(model_, data_, q, v);
+}
+Eigen::MatrixXd RobotModel::getHessian(const std::string &frame_name) {
+  const pinocchio::FrameIndex id = model_.getFrameId(frame_name);
+  Eigen::MatrixXd Jdot(6, model_.nv);
+  pinocchio::getFrameJacobianTimeVariation(model_, data_, id, pinocchio::LOCAL,
+                                           Jdot);
+  return Jdot;
+}
+
+Eigen::MatrixXd
+RobotModel::getGeometricalJacobian(const std::string &frame_name) {
+  const pinocchio::FrameIndex id = model_.getFrameId(frame_name);
+  Eigen::MatrixXd Jdot(6, model_.nv);
+  pinocchio::getFrameJacobian(model_, data_, id, pinocchio::LOCAL, Jdot);
+  return Jdot;
 }
 
 const pinocchio::Model &RobotModel::getModel() const { return model_; }
 const pinocchio::Data &RobotModel::getData() const { return data_; }
 
-} // namespace my_robot
+} // namespace panda

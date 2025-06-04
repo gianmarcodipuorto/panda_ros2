@@ -1,5 +1,6 @@
 #include "geometry_msgs/msg/wrench.hpp"
 #include "geometry_msgs/msg/wrench_stamped.hpp"
+#include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
 #include "panda_interfaces/msg/wrench_array.hpp"
 #include <rclcpp/create_timer.hpp>
 #include <rclcpp/logging.hpp>
@@ -11,13 +12,13 @@
 
 using namespace std::chrono_literals;
 
-class ForceTorqueSensorsPublisher : public rclcpp::Node {
+class TorqueSensorsPublisher : public rclcpp::Node {
 public:
-  ForceTorqueSensorsPublisher() : Node("force_torque_sensors_publisher") {
+  TorqueSensorsPublisher() : Node("torque_sensors_publisher") {
 
-    wrench_array_pub =
-        this->create_publisher<panda_interfaces::msg::WrenchArray>(
-            force_torque_sensor_topic_name, 10);
+    torque_measures_pub = this->create_publisher<
+        panda_interfaces::msg::JointTorqueMeasureStamped>(
+        torque_sensor_topic_name, 10);
 
     wrenches.resize(sensor_topic_names.size());
     gz_wrench_stamped_sub.resize(sensor_topic_names.size());
@@ -34,9 +35,12 @@ public:
     }
 
     auto wrench_array_pub_cb = [this]() {
-      panda_interfaces::msg::WrenchArray wrench_array;
-      wrench_array.wrenches = wrenches;
-      wrench_array_pub->publish(wrench_array);
+      panda_interfaces::msg::JointTorqueMeasureStamped torque_stamped;
+      for (size_t i = 0; i < torque_stamped.measures.torque.size(); i++) {
+        torque_stamped.measures.torque[i] = wrenches[i].wrench.torque.z;
+      }
+      torque_stamped.header.stamp = this->get_clock()->now();
+      this->torque_measures_pub->publish(torque_stamped);
     };
 
     timer =
@@ -46,11 +50,12 @@ public:
   }
 
 private:
+  rclcpp::Publisher<panda_interfaces::msg::JointTorqueMeasureStamped>::SharedPtr
+      torque_measures_pub;
+
   std::vector<
       rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr>
       gz_wrench_stamped_sub;
-  rclcpp::Publisher<panda_interfaces::msg::WrenchArray>::SharedPtr
-      wrench_array_pub;
 
   std::vector<geometry_msgs::msg::WrenchStamped> wrenches;
   rclcpp::TimerBase::SharedPtr timer;
@@ -62,12 +67,12 @@ private:
       "/joint7/force_torque_sensor",
   };
 
-  const std::string force_torque_sensor_topic_name{"/ft_sensors"};
+  const std::string torque_sensor_topic_name{"/tau_sensors"};
 };
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<ForceTorqueSensorsPublisher>());
+  rclcpp::spin(std::make_shared<TorqueSensorsPublisher>());
   rclcpp::shutdown();
   return 0;
 }

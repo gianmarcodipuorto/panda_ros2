@@ -20,14 +20,19 @@ const std::string forward_kine_service_name{"forward_kine"};
 const std::string jacob_calc_service_name{"calculate_jacobian"};
 const std::string joints_cmd_pos_service_name{"send_joints_pos_cmd"};
 const std::string clik_service_name{"clik"};
+const std::string set_compliance_mode_service_name{"set_compliance_mode"};
 const std::string pd_grav_controller_node_name{"pd_plus_gravity_controller"};
+const std::string inverse_dynamics_controller_node_name{"pd_plus_gravity_controller"};
 
 /////////////////////////////////////////////////////////////
 const std::string panda_effort_cmd_topic_name{"/panda/cmd/effort"};
 const std::string panda_pos_cmd_topic_name{"/panda/cmd/joint_pos"};
 const std::string panda_pose_cmd_topic_name{"/panda/cmd/pose"};
+const std::string panda_speed_cmd_topic_name{"/panda/cmd/speed"};
+const std::string panda_accel_cmd_topic_name{"/panda/cmd/accel"};
+const std::string panda_joint_cmd_topic_name{"/panda/cmd/joint_cmd"};
 const std::string joint_state_topic_name{"/joint_states"};
-const std::string force_torque_sensor_topic_name{"/ft_sensors"};
+const std::string torque_sensor_topic_name{"/tau_sensors"};
 const std::string start_and_stop_clik_topic_name{"/clik_ctrl"};
 
 /////////////////////////////////////////////////////////////

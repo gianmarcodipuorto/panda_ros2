@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(tf2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "./msg/JacobColumn.msg"
@@ -25,7 +26,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "./action/CartTraj.action"
   "./action/JointTraj.action"
   "./msg/WrenchArray.msg"
-  DEPENDENCIES tf2_msgs geometry_msgs
+  "./msg/JointsCommand.msg"
+  "./msg/JointTorqueMeasure.msg"
+  "./msg/JointTorqueMeasureStamped.msg"
+  "./srv/SetComplianceMode.srv"
+  DEPENDENCIES tf2_msgs geometry_msgs std_msgs
 )
 
 if(BUILD_TESTING)

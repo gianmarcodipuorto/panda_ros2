@@ -25,6 +25,12 @@ def generate_launch_description():
         description='Controller Kd'
     )
 
+    controller_md = DeclareLaunchArgument(
+        'controller_md',
+        default_value='100.0',
+        description='Controller Md'
+    )
+
     control_rate = DeclareLaunchArgument(
         'controller_rate',
         default_value='1000.0',
@@ -49,22 +55,6 @@ def generate_launch_description():
         description='Clamp effort control from controller'
     )
 
-    # jacobian_calculator = Node(
-    #     package='panda_utils',
-    #     executable='calc_jacobian_server',
-    #     name='jacobian_calculator',
-    #     parameters=[{
-    #         'use_sim_time': use_sim_time,
-    #     }],
-    # )
-    # forward_kine = Node(
-    #     package='panda_utils',
-    #     executable='calc_forward_kine_server',
-    #     name='forward_kine',
-    #     parameters=[{
-    #         'use_sim_time': use_sim_time,
-    #     }],
-    # )
     pos_cmds_joints = Node(
         package='panda_utils',
         executable='send_joints_cmd_server',
@@ -119,10 +109,24 @@ def generate_launch_description():
             'clamp': LaunchConfiguration('clamp_effort_control')
         }],
     )
+    inverse_dynamics_controller = Node(
+        package='panda_utils',
+        executable='inverse_dynamics_controller',
+        name='inverse_dynamics_controller',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'Kp': LaunchConfiguration('controller_kp'),
+            'Kd': LaunchConfiguration('controller_kd'),
+            'Md': LaunchConfiguration('controller_md'),
+            'control_freq': LaunchConfiguration('controller_rate'),
+            'clamp': LaunchConfiguration('clamp_effort_control')
+        }],
+    )
 
     return LaunchDescription([
         controller_kp,
         controller_kd,
+        controller_md,
         control_rate,
         clamp_effort_control,
         clik_ts,
@@ -132,5 +136,6 @@ def generate_launch_description():
         joint_traj_server,
         cart_traj_server,
         clik_cmd_pub,
-        pd_grav_controller
+        pd_grav_controller,
+        inverse_dynamics_controller
     ])

@@ -24,6 +24,7 @@ from launch_ros.substitutions import FindPackageShare
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
+from launch.conditions import IfCondition
 
 
 def generate_launch_description():
@@ -33,21 +34,37 @@ def generate_launch_description():
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_panda_world = get_package_share_directory('panda_world')
 
-    urdf = FileContent(
-        PathJoinSubstitution([FindPackageShare('panda_world'), 'models', 'panda', 'panda_fr3.urdf']))
+    urdf = os.path.join(get_package_share_directory('panda_world'),
+                        'models', 'panda', 'panda_fr3_rviz.urdf')
+    default_rviz_config = os.path.join(
+        get_package_share_directory('panda_world'), 'config', 'config.rviz')
+
+    with open(urdf, 'r') as file:
+        robot_description = file.read()
 
     DeclareLaunchArgument(
         'use_sim_time',
         default_value='true',
         description='Use simulation (Gazebo) clock if true')
 
-    # robot_state = Node(
-    #     package='robot_state_publisher',
-    #     executable='robot_state_publisher',
-    #     name='robot_state_publisher',
-    #     output='screen',
-    #     parameters=[{'use_sim_time': use_sim_time, 'robot_description': urdf}],
-    #     arguments=[urdf])
+    rviz_launch_arg = DeclareLaunchArgument('rviz', default_value='false',
+                                            description='Open RViz.')
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        # FIXME: Generate new RViz config once this demo is usable again
+        # arguments=['-d', os.path.join(pkg_ros_gz_sim_demos, 'rviz', 'depth_camera.rviz')],
+        condition=IfCondition(LaunchConfiguration('rviz')),
+        arguments=['-d', default_rviz_config]
+    )
+
+    robot_state = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time, 'robot_description': robot_description}],
+        arguments=[urdf])
 
     panda_fr3_model = PathJoinSubstitution([
         pkg_panda_world,
@@ -87,9 +104,9 @@ def generate_launch_description():
         output='screen'
     )
 
-    force_torque_publisher = Node(
+    torque_publisher = Node(
         package='panda_world',
-        executable='force_torque_sensor_publisher',
+        executable='torque_sensor_publisher',
         parameters=[{
             'use_sim_time': use_sim_time
         }],
@@ -165,9 +182,11 @@ def generate_launch_description():
     # Add the actions to launch all of the create nodes
     ld.add_action(gz_sim)
     ld.add_action(load_nodes)
-    # ld.add_action(robot_state)
+    ld.add_action(robot_state)
     ld.add_action(bridge)
     ld.add_action(joint_state_publisher_patched)
-    ld.add_action(force_torque_publisher)
+    ld.add_action(torque_publisher)
+    ld.add_action(rviz_launch_arg)
+    ld.add_action(rviz)
 
     return ld
