@@ -14,6 +14,7 @@
 #include <rclcpp/utilities.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_action/types.hpp>
+#include <string>
 #include <thread>
 
 using CartTraj = panda_interfaces::action::CartTraj;
@@ -36,24 +37,37 @@ class CartTrajectory : public rclcpp::Node {
 
 public:
   CartTrajectory(const rclcpp::NodeOptions opt = rclcpp::NodeOptions())
-      : Node("cart_trajectory", opt) {
+      : Node(panda_interface_names::cart_traj_node_name, opt) {
+
+    this->declare_parameter<double>("loop_rate_freq", 1000.0);
+
+    loop_rate_freq = this->get_parameter("loop_rate_freq").as_double();
 
     auto handle_goal = [this](const rclcpp_action::GoalUUID uuid,
                               std::shared_ptr<const CartTraj::Goal> goal) {
       RCLCPP_INFO(this->get_logger(), "Received goal request");
       (void)uuid;
       RCLCPP_INFO_STREAM(this->get_logger(),
-                         "Desired pose is: ["
+                         "Initial pose: Position: ["
+                             << goal->initial_pose.position.x << ", "
+                             << goal->initial_pose.position.y << ", "
+                             << goal->initial_pose.position.z
+                             << "] Orientation(w, x, y, z): ["
+                             << goal->initial_pose.orientation.w << ", "
+                             << goal->initial_pose.orientation.x << ", "
+                             << goal->initial_pose.orientation.y << ", "
+                             << goal->initial_pose.orientation.z << "]");
+      RCLCPP_INFO_STREAM(this->get_logger(),
+                         "Final pose: Position: ["
                              << goal->desired_pose.position.x << ", "
                              << goal->desired_pose.position.y << ", "
-                             << goal->desired_pose.position.z << ", "
+                             << goal->desired_pose.position.z
+                             << "] Orientation(w, x, y, z): ["
+                             << goal->desired_pose.orientation.w << ", "
                              << goal->desired_pose.orientation.x << ", "
                              << goal->desired_pose.orientation.y << ", "
                              << goal->desired_pose.orientation.z << "]");
-      RCLCPP_INFO(this->get_logger(), "Started CLIK");
-      std_msgs::msg::Bool start;
-      start.data = true;
-      clik_start_pub->publish(start);
+      RCLCPP_INFO_STREAM(this->get_logger(), "In " << goal->total_time << "s");
       return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     };
 
@@ -75,12 +89,10 @@ public:
         };
 
     this->action_traj_server = rclcpp_action::create_server<CartTraj>(
-        this, panda_interface_names::panda_cart_move_action_name, handle_goal,
-        handle_cancel, handle_accepted);
-
-    clik_start_pub = this->create_publisher<std_msgs::msg::Bool>(
-        panda_interface_names::start_and_stop_clik_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        this,
+        panda_interface_names::cart_traj_node_name + std::string{"/"} +
+            panda_interface_names::panda_cart_move_action_name,
+        handle_goal, handle_cancel, handle_accepted);
 
     cmd_pose_clik_pub = this->create_publisher<geometry_msgs::msg::Pose>(
         panda_interface_names::panda_pose_cmd_topic_name,
@@ -89,12 +101,13 @@ public:
 
 private:
   rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr cmd_pose_clik_pub;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr clik_start_pub;
   rclcpp_action::Server<CartTraj>::SharedPtr action_traj_server;
+
+  double loop_rate_freq{};
 
   void execute(const std::shared_ptr<GoalHandleCartMove> goal_handle) {
     RCLCPP_INFO(this->get_logger(), "Executing goal");
-    rclcpp::Rate loop_rate(100.0, this->get_clock());
+    rclcpp::Rate loop_rate(loop_rate_freq, this->get_clock());
 
     const auto goal = goal_handle->get_goal();
 

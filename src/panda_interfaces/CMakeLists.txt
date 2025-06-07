@@ -30,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "./msg/JointTorqueMeasure.msg"
   "./msg/JointTorqueMeasureStamped.msg"
   "./srv/SetComplianceMode.srv"
+  "./action/LoopCartTraj.action"
   DEPENDENCIES tf2_msgs geometry_msgs std_msgs
 )
 

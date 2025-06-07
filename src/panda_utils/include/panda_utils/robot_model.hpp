@@ -1,5 +1,6 @@
 #pragma once
 
+#include "geometry_msgs/msg/pose.hpp"
 #include <pinocchio/algorithm/compute-all-terms.hpp>
 #include <pinocchio/algorithm/crba.hpp>
 #include <pinocchio/algorithm/frames.hpp>
@@ -44,6 +45,7 @@ public:
   void computeForwardKinematics(const Eigen::VectorXd &q,
                                 const Eigen::VectorXd &v = Eigen::VectorXd());
 
+  geometry_msgs::msg::Pose getPose(const std::string &frame_name);
   pinocchio::SE3 getFramePose(const std::string &frame_name);
   pinocchio::SE3 getFramePoseInBase(const std::string &frame_name,
                                     const std::string &base_joint_name);

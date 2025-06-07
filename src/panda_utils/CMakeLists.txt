@@ -56,7 +56,8 @@ add_executable(cart_traj ./src/cart_traj.cpp)
 ament_target_dependencies(cart_traj rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs)
 
 add_executable(clik_cmd_pub ./src/clik_cmd_publisher.cpp)
-ament_target_dependencies(clik_cmd_pub rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs)
+ament_target_dependencies(clik_cmd_pub rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs rclcpp_lifecycle ament_index_cpp)
+target_link_libraries(clik_cmd_pub robot_model)
 
 add_executable(demo_node ./examples/demo_node.cpp)
 ament_target_dependencies(demo_node rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs)
@@ -77,6 +78,14 @@ add_executable(pd_grav_controller_demo ./examples/demo_pd_grav.cpp)
 ament_target_dependencies(pd_grav_controller_demo rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 target_link_libraries(pd_grav_controller_demo robot_model)
 
+add_executable(controller_manager ./src/controller_manager.cpp)
+ament_target_dependencies(controller_manager rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+target_link_libraries(controller_manager robot_model)
+
+add_executable(cart_traj_example ./examples/cart_traj_example.cpp)
+ament_target_dependencies(cart_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+target_link_libraries(cart_traj_example robot_model)
+
 install(TARGETS
   send_joints_cmd_server
   send_joints_cmd_simple_client
@@ -90,6 +99,8 @@ install(TARGETS
   pd_grav_controller
   pd_grav_controller_demo
   inverse_dynamics_controller
+  controller_manager
+  cart_traj_example
   DESTINATION lib/${PROJECT_NAME}
 )
 

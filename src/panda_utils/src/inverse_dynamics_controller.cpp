@@ -346,7 +346,6 @@ private:
         }
       }
     }
-
   }
 
   void clamp_vec(Eigen::VectorXd &vec, const Eigen::VectorXd &min_limits,

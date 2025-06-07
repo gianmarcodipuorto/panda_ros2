@@ -122,6 +122,14 @@ def generate_launch_description():
             'clamp': LaunchConfiguration('clamp_effort_control')
         }],
     )
+    controller_manager = Node(
+        package='panda_utils',
+        executable='controller_manager',
+        name='controller_manager',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+        }],
+    )
 
     return LaunchDescription([
         controller_kp,
@@ -137,5 +145,6 @@ def generate_launch_description():
         cart_traj_server,
         clik_cmd_pub,
         pd_grav_controller,
-        inverse_dynamics_controller
+        inverse_dynamics_controller,
+        controller_manager
     ])

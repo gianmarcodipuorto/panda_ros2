@@ -1,0 +1,7 @@
+geometry_msgs/Pose initial_pose
+geometry_msgs/Pose[] desired_poses
+float64 total_time
+---
+bool completed
+---
+float64 time_left

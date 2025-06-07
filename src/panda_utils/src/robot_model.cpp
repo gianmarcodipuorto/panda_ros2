@@ -1,10 +1,13 @@
 #include "panda_utils/robot_model.hpp"
 #include "algorithm/frames.hpp"
 #include "algorithm/jacobian.hpp"
+#include "geometry_msgs/msg/pose.hpp"
+#include "spatial/fwd.hpp"
 #include <fstream>
 #include <pinocchio/algorithm/center-of-mass.hpp>
 #include <pinocchio/parsers/urdf.hpp>
 #include <sstream>
+#include <tf2_eigen/tf2_eigen.hpp>
 
 namespace panda {
 
@@ -106,6 +109,29 @@ pinocchio::SE3 RobotModel::getFramePose(const std::string &frame_name) {
     std::cout << frame;
   }
   return data_.oMf[id];
+}
+
+geometry_msgs::msg::Pose RobotModel::getPose(const std::string &frame_name) {
+  pinocchio::SE3 se3_pose = getFramePose(frame_name);
+  geometry_msgs::msg::Pose pose;
+  pose.position.x = se3_pose.translation()(0);
+  pose.position.y = se3_pose.translation()(1);
+  pose.position.z = se3_pose.translation()(2);
+
+  Eigen::Matrix3d R = se3_pose.rotation();
+  tf2::Matrix3x3 tf_rot(R(0, 0), R(0, 1), R(0, 2), R(1, 0), R(1, 1), R(1, 2),
+                        R(2, 0), R(2, 1), R(2, 2));
+
+  tf2::Quaternion q;
+  tf_rot.getRotation(q);
+  q.normalize();
+
+  pose.orientation.w = q.w();
+  pose.orientation.x = q.x();
+  pose.orientation.y = q.y();
+  pose.orientation.z = q.z();
+
+  return pose;
 }
 
 pinocchio::SE3
