@@ -7,6 +7,7 @@
 #include <pinocchio/algorithm/center-of-mass.hpp>
 #include <pinocchio/parsers/urdf.hpp>
 #include <sstream>
+#include <string>
 #include <tf2_eigen/tf2_eigen.hpp>
 
 namespace panda {
@@ -50,12 +51,12 @@ Eigen::VectorXd RobotModel::getCoriolisCentrifugal(const Eigen::VectorXd &q,
 Eigen::VectorXd
 RobotModel::computeHessianTimesQDot(const Eigen::VectorXd &q,
                                     const Eigen::VectorXd &q_dot,
-                                    const pinocchio::FrameIndex &frame_id) {
+                                    const std::string &frame_id) {
   pinocchio::computeJointJacobians(model_, data_, q);
   pinocchio::computeJointJacobiansTimeVariation(model_, data_, q, q_dot);
 
   Eigen::MatrixXd Jdot(6, model_.nv);
-  pinocchio::getFrameJacobianTimeVariation(model_, data_, frame_id,
+  pinocchio::getFrameJacobianTimeVariation(model_, data_, model_.getFrameId(frame_id),
                                            pinocchio::LOCAL, Jdot);
 
   return Jdot * q_dot;

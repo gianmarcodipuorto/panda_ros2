@@ -33,7 +33,7 @@ public:
   Eigen::VectorXd
   computeHessianTimesQDot(const Eigen::VectorXd &q,
                           const Eigen::VectorXd &q_dot,
-                          const pinocchio::FrameIndex &frame_id);
+                          const std::string &frame_id);
   Eigen::MatrixXd
   computeAnalyticalJacobian(const Eigen::VectorXd &q,
                             const pinocchio::FrameIndex &frame_id);

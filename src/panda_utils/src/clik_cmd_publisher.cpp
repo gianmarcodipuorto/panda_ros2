@@ -72,7 +72,7 @@ public:
         panda_interface_names::DEFAULT_TOPIC_QOS, set_pose_cb);
 
     desired_twist_sub = this->create_subscription<geometry_msgs::msg::Twist>(
-        panda_interface_names::panda_speed_cmd_topic_name,
+        panda_interface_names::panda_twist_cmd_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS, set_twist_cb);
 
     auto control_cycle = [this]() {

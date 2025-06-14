@@ -34,13 +34,16 @@ const std::string panda_pos_cmd_topic_name{"/panda/cmd/joint_pos"};
 const std::string panda_joint_cmd_topic_name{"/panda/cmd/joint_cmd"};
 // Cartesian space
 const std::string panda_pose_cmd_topic_name{"/panda/cmd/pose"};
-const std::string panda_speed_cmd_topic_name{"/panda/cmd/speed"};
+const std::string panda_twist_cmd_topic_name{"/panda/cmd/twist"};
 const std::string panda_accel_cmd_topic_name{"/panda/cmd/accel"};
 
 const std::string joint_state_topic_name{"/joint_states"};
 const std::string panda_pose_state_topic_name{"/pose_state"};
 const std::string torque_sensor_topic_name{"/tau_sensors"};
 const std::string start_and_stop_clik_topic_name{"/clik_ctrl"};
+const std::string jacobian_condition_topic_name{"/jacob_cond"};
+const std::string pose_error_topic_name{"/pose_error"};
+
 
 /////////////////////////////////////////////////////////////
 const std::string panda_traj_move_action_name{"joint_traj_action"};

@@ -31,6 +31,12 @@ def generate_launch_description():
         description='Controller Md'
     )
 
+    lambda_pinv = DeclareLaunchArgument(
+        'lambda',
+        default_value='0.01',
+        description='Lambda value for damped least square jacobian pseudo-inverse'
+    )
+
     control_rate = DeclareLaunchArgument(
         'controller_rate',
         default_value='1000.0',
@@ -144,6 +150,23 @@ def generate_launch_description():
 
         }],
     )
+    impedance_controller = Node(
+        package='panda_utils',
+        executable='impedance_controller',
+        name='impedance_controller',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'Kp': LaunchConfiguration('controller_kp'),
+            'Kd': LaunchConfiguration('controller_kd'),
+            'Md': LaunchConfiguration('controller_md'),
+            'lambda': LaunchConfiguration('lambda'),
+            'control_freq': LaunchConfiguration('controller_rate'),
+            'clamp': LaunchConfiguration('clamp_effort_control'),
+            'use_robot': LaunchConfiguration('use_robot'),
+            'robot_ip': LaunchConfiguration('robot_ip')
+
+        }],
+    )
     controller_manager = Node(
         package='panda_utils',
         executable='controller_manager',
@@ -157,6 +180,7 @@ def generate_launch_description():
         controller_kp,
         controller_kd,
         controller_md,
+        lambda_pinv,
         control_rate,
         loop_rate_freq,
         clamp_effort_control,
@@ -169,6 +193,7 @@ def generate_launch_description():
         cart_traj_server,
         clik_cmd_pub,
         inverse_dynamics_controller,
+        impedance_controller,
         # pos_cmds_joints,
         # pd_grav_controller,
         # controller_manager

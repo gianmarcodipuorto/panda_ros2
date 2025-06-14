@@ -55,10 +55,9 @@ int main(int argc, char **argv) {
   cart_traj_action_client->wait_for_action_server();
   RCLCPP_INFO(node->get_logger(), "Servers UP");
 
-  // Get initial pose 
+  // Get initial pose
   {
-    RCLCPP_INFO_STREAM(node->get_logger(),
-                       "Getting initial pose, press ENTER");
+    RCLCPP_INFO_STREAM(node->get_logger(), "Getting initial pose, press ENTER");
     std::cin.ignore();
 
     sensor_msgs::msg::JointState joints;
@@ -72,7 +71,17 @@ int main(int argc, char **argv) {
     }
 
     RCLCPP_INFO_STREAM(node->get_logger(), "Calculating current pose");
-    initial_pose= panda_mine.pose(joints_doub);
+    initial_pose = panda_mine.pose(joints_doub);
+
+    RCLCPP_INFO_STREAM(node->get_logger(),
+                       "Initial pose: [" << initial_pose.position.x << ", "
+                                         << initial_pose.position.y << ", "
+                                         << initial_pose.position.z
+                                         << "], Orientation (w, x, y, z): ["
+                                         << initial_pose.orientation.w << ", "
+                                         << initial_pose.orientation.x << ", "
+                                         << initial_pose.orientation.y << ", "
+                                         << initial_pose.orientation.z << "]");
   }
 
   // Calling action server
@@ -90,6 +99,15 @@ int main(int argc, char **argv) {
     cart_goal.desired_pose = desired_pose;
     cart_goal.total_time = total_time;
 
+    RCLCPP_INFO_STREAM(
+        node->get_logger(),
+        "Objective: Desired pose ["
+            << desired_pose.position.x << ", " << desired_pose.position.y
+            << ", " << desired_pose.position.z
+            << "], Orientation (w, x, y, z): [" << desired_pose.orientation.w
+            << ", " << desired_pose.orientation.x << ", "
+            << desired_pose.orientation.y << ", " << desired_pose.orientation.z
+            << "] in " << total_time << "[s]");
     // chiamo l'azione e aspetto che termini
     auto future_goal_handle =
         cart_traj_action_client->async_send_goal(cart_goal);
