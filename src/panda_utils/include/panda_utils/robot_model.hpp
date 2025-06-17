@@ -30,10 +30,9 @@ public:
                                          const Eigen::VectorXd &v);
   Eigen::VectorXd getNonLinearEffects(const Eigen::VectorXd &q,
                                       const Eigen::VectorXd &v);
-  Eigen::VectorXd
-  computeHessianTimesQDot(const Eigen::VectorXd &q,
-                          const Eigen::VectorXd &q_dot,
-                          const std::string &frame_id);
+  Eigen::VectorXd computeHessianTimesQDot(const Eigen::VectorXd &q,
+                                          const Eigen::VectorXd &q_dot,
+                                          const std::string &frame_id);
   Eigen::MatrixXd
   computeAnalyticalJacobian(const Eigen::VectorXd &q,
                             const pinocchio::FrameIndex &frame_id);
@@ -52,7 +51,7 @@ public:
   void computeAll(const Eigen::VectorXd &q, const Eigen::VectorXd &v);
 
   const pinocchio::Model &getModel() const;
-  const pinocchio::Data &getData() const;
+  pinocchio::Data &getData();
 
 private:
   pinocchio::Model model_;

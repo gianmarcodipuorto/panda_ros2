@@ -118,13 +118,11 @@ private:
     joint_state = nullptr;
     while (rclcpp::ok() && !joint_state) {
       std::this_thread::sleep_for(500ns);
-      RCLCPP_INFO(this->get_logger(), "Still waiting");
+      RCLCPP_INFO(this->get_logger(), "Still waiting current joint state");
     }
     q0 = *joint_state;
 
     rclcpp::Time t0 = this->get_clock()->now();
-    RCLCPP_INFO_STREAM(this->get_logger(),
-                       "Time now outside cylce" << t0.seconds());
     rclcpp::Duration t = rclcpp::Duration(0, 0);
 
     rclcpp::Duration traj_duration = rclcpp::Duration(goal->total_time, 0);

@@ -13,10 +13,6 @@
      name="gz::sim::systems::Sensors">
      <render_engine>ogre2</render_engine>
     </plugin>
-    <plugin filename="MouseDrag">
-      <rotation_stiffness>100.0</rotation_stiffness>
-      <position_stiffness>100.0</position_stiffness>
-    </plugin>
 
     <physics type="ode">
       <max_step_size>0.0001</max_step_size>

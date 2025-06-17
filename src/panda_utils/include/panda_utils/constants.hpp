@@ -41,7 +41,7 @@ const std::string joint_state_topic_name{"/joint_states"};
 const std::string panda_pose_state_topic_name{"/pose_state"};
 const std::string torque_sensor_topic_name{"/tau_sensors"};
 const std::string start_and_stop_clik_topic_name{"/clik_ctrl"};
-const std::string jacobian_condition_topic_name{"/jacob_cond"};
+const std::string min_singular_value_topic_name{"/sigma_min"};
 const std::string pose_error_topic_name{"/pose_error"};
 
 

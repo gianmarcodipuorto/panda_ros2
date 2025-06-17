@@ -10,6 +10,7 @@
 #include <Eigen/src/Core/Matrix.h>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <memory>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -26,6 +27,11 @@ using GoalHandleJointTraj = rclcpp_action::ClientGoalHandle<JointTraj>;
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
+
+  double total_time = 5.0;
+  if (argc >= 2) {
+    total_time = atoi(argv[1]);
+  }
 
   auto node = std::make_shared<rclcpp::Node>("joint_traj_example_node");
 
@@ -50,7 +56,6 @@ int main(int argc, char **argv) {
   panda_interfaces::msg::JointsCommand desired_config;
   desired_config.positions = std::array<double, 7>{
       0.0, 0.0, 0.0, -3.0 / 4.0 * M_PI, 0.0, 3.0 / 4.0 * M_PI, M_PI_4};
-  double total_time = 5.0;
 
   RCLCPP_INFO(node->get_logger(), "Waiting for servers...");
   joint_traj_action_client->wait_for_action_server();
@@ -76,8 +81,17 @@ int main(int argc, char **argv) {
 
   // Calling action server
   {
-    RCLCPP_INFO_STREAM(node->get_logger(),
-                       "Ready to call action server, press ENTER");
+    RCLCPP_INFO_STREAM(
+        node->get_logger(),
+        "Ready to call action server with desired configuration: ["
+            << desired_config.positions[0] << ", "
+            << desired_config.positions[1] << ", "
+            << desired_config.positions[2] << ", "
+            << desired_config.positions[3] << ", "
+            << desired_config.positions[4] << ", "
+            << desired_config.positions[5] << ", "
+            << desired_config.positions[6] << ", "
+            << "], press ENTER");
     std::cin.ignore();
 
     panda_interfaces::action::JointTraj_Goal joint_traj_goal;
@@ -87,11 +101,10 @@ int main(int argc, char **argv) {
 
     rclcpp_action::Client<JointTraj>::SendGoalOptions goal_options;
     goal_options.feedback_callback =
-        [node, &joint_traj_action_client](
-            GoalHandleJointTraj::SharedPtr goal_handle,
-            const std::shared_ptr<
-                const panda_interfaces::action::JointTraj_Feedback>
-                feedback) {
+        [node](GoalHandleJointTraj::SharedPtr,
+               const std::shared_ptr<
+                   const panda_interfaces::action::JointTraj_Feedback>
+                   feedback) {
           RCLCPP_INFO_STREAM(node->get_logger(),
                              "Time left: " << feedback->time_left << "[s].");
         };

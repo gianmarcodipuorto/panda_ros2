@@ -29,6 +29,7 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <franka/model.h>
@@ -60,7 +61,7 @@ using sensor_msgs::msg::JointState;
 
 auto DEFAULT_URDF_PATH =
     ament_index_cpp::get_package_share_directory("panda_world") +
-    panda_constants::panda_model_effort;
+    panda_constants::panda_model_effort_no_table;
 
 geometry_msgs::msg::Pose
 convertMatrixToPose(const std::array<double, 16> &tf_matrix) {
@@ -200,8 +201,8 @@ public:
         panda_interface_names::panda_pose_state_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS);
 
-    jacobian_condition = this->create_publisher<std_msgs::msg::Float64>(
-        panda_interface_names::jacobian_condition_topic_name,
+    min_singular_val_pub = this->create_publisher<std_msgs::msg::Float64>(
+        panda_interface_names::min_singular_value_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS);
 
     pose_error = this->create_publisher<geometry_msgs::msg::PoseStamped>(
@@ -397,7 +398,7 @@ private:
 
   // Robot pose publisher and debug
   Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr robot_pose_pub{};
-  Publisher<std_msgs::msg::Float64>::SharedPtr jacobian_condition{};
+  Publisher<std_msgs::msg::Float64>::SharedPtr min_singular_val_pub{};
   Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_error{};
 
   // Services
@@ -428,7 +429,7 @@ private:
   Eigen::VectorXd velocity_limits{};
   Eigen::VectorXd acceleration_limits{};
 
-  const std::string frame_id_name{"fr3_hand"};
+  const std::string frame_id_name{"fr3_link8"};
 
   // Control loop related variables
   rclcpp::Rate::SharedPtr control_loop_rate;
@@ -519,6 +520,8 @@ void ImpedanceController::control() {
 
   // Coefficient for dynamic lambda damping
   double alpha = 30.0;
+  double epsilon = 1e-1;
+  double k_max = 0.7;
 
   while (start_flag.load() && rclcpp::ok()) {
 
@@ -538,8 +541,8 @@ void ImpedanceController::control() {
     panda.computeAll(current_joints_config_vec, current_joints_speed);
 
     // Get current pose
-    // Pose current_pose_tmp = panda.getPose(frame_id_name);
-    Pose current_pose_tmp = panda_mine.pose(current_joints_config_doubles);
+    Pose current_pose_tmp = panda.getPose(frame_id_name);
+    // Pose current_pose_tmp = panda_mine.pose(current_joints_config_doubles);
     Eigen::Quaterniond current_quat{};
     current_quat.w() = current_pose_tmp.orientation.w;
     current_quat.x() = current_pose_tmp.orientation.x;
@@ -595,18 +598,15 @@ void ImpedanceController::control() {
 
     // Calculate quantities for control
     //
-    // Eigen::Matrix<double, 6, 7> jacobian =
-    //     panda.getGeometricalJacobian(frame_id_name);
     Eigen::Matrix<double, 6, 7> jacobian =
-        panda_mine.geometrical_jacobian(current_joints_config_doubles);
+        panda.getGeometricalJacobian(frame_id_name);
+    // Eigen::Matrix<double, 6, 7> jacobian =
+    //     panda_mine.geometrical_jacobian(current_joints_config_doubles);
 
-    // Calculate jacobian condition number
+    // Calculate jacobian SVD
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU |
                                                         Eigen::ComputeThinV);
-    double sigma_max = svd.singularValues()(0);
     double sigma_min = svd.singularValues().tail(1)(0);
-
-    double condition_number = sigma_max / sigma_min;
 
     // Doesn't account for friction
     non_linear_effects = panda.getNonLinearEffects(current_joints_config_vec,
@@ -619,7 +619,10 @@ void ImpedanceController::control() {
     //                     .inverse();
 
     // DYNAMIC LAMBDA BASED ON CONDITION NUMBER
-    double lambda = std::exp(-alpha * sigma_min);
+    double lambda = sigma_min <= epsilon
+                        ? k_max * (pow(sigma_min, 2) / pow(epsilon, 2))
+                        : 0.0;
+    // double lambda = std::exp(-alpha * sigma_min);
     jacobian_pinv = jacobian.transpose() *
                     (jacobian * jacobian.transpose() +
                      lambda * Eigen::Matrix<double, 6, 6>::Identity())
@@ -645,11 +648,10 @@ void ImpedanceController::control() {
 
               Md * desired_accel_vec +
               Kd * (desired_twist_vec - jacobian * current_joints_speed) +
-              Kp * (error_pose_vec)
-              // -
-              // panda.computeHessianTimesQDot(
-              //                current_joints_config_vec, current_joints_speed,
-              //                frame_id_name)
+              Kp * error_pose_vec -
+              Md * panda.computeHessianTimesQDot(current_joints_config_vec,
+                                                 current_joints_speed,
+                                                 frame_id_name)
 
           );
     }
@@ -680,10 +682,10 @@ void ImpedanceController::control() {
     current_pose.header.stamp = this->now();
     robot_pose_pub->publish(current_pose);
 
-    // Publish jacobian condition
-    std_msgs::msg::Float64 jacob_cond;
-    jacob_cond.data = condition_number;
-    jacobian_condition->publish(jacob_cond);
+    // Publish minimum singular value
+    std_msgs::msg::Float64 sigma;
+    sigma.data = sigma_min;
+    min_singular_val_pub->publish(sigma);
 
     // Publish error on pose
     geometry_msgs::msg::PoseStamped error;

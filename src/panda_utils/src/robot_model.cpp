@@ -2,6 +2,7 @@
 #include "algorithm/frames.hpp"
 #include "algorithm/jacobian.hpp"
 #include "geometry_msgs/msg/pose.hpp"
+#include "multibody/fwd.hpp"
 #include "spatial/fwd.hpp"
 #include <fstream>
 #include <pinocchio/algorithm/center-of-mass.hpp>
@@ -57,7 +58,7 @@ RobotModel::computeHessianTimesQDot(const Eigen::VectorXd &q,
 
   Eigen::MatrixXd Jdot(6, model_.nv);
   pinocchio::getFrameJacobianTimeVariation(model_, data_, model_.getFrameId(frame_id),
-                                           pinocchio::LOCAL, Jdot);
+                                           pinocchio::LOCAL_WORLD_ALIGNED, Jdot);
 
   return Jdot * q_dot;
 }
@@ -71,7 +72,7 @@ RobotModel::computeAnalyticalJacobian(const Eigen::VectorXd &q,
 
   // 2. Geometric Jacobian
   Eigen::MatrixXd J_geo(6, model_.nv);
-  pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL, J_geo);
+  pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL_WORLD_ALIGNED, J_geo);
 
   // 3. Rotation matrix
   const Eigen::Matrix3d &R = data_.oMf[frame_id].rotation();
@@ -155,7 +156,7 @@ void RobotModel::computeAll(const Eigen::VectorXd &q,
 Eigen::MatrixXd RobotModel::getHessian(const std::string &frame_name) {
   const pinocchio::FrameIndex id = model_.getFrameId(frame_name);
   Eigen::MatrixXd Jdot(6, model_.nv);
-  pinocchio::getFrameJacobianTimeVariation(model_, data_, id, pinocchio::LOCAL,
+  pinocchio::getFrameJacobianTimeVariation(model_, data_, id, pinocchio::LOCAL_WORLD_ALIGNED,
                                            Jdot);
   return Jdot;
 }
@@ -164,11 +165,11 @@ Eigen::MatrixXd
 RobotModel::getGeometricalJacobian(const std::string &frame_name) {
   const pinocchio::FrameIndex id = model_.getFrameId(frame_name);
   Eigen::MatrixXd Jdot(6, model_.nv);
-  pinocchio::getFrameJacobian(model_, data_, id, pinocchio::LOCAL, Jdot);
+  pinocchio::getFrameJacobian(model_, data_, id, pinocchio::LOCAL_WORLD_ALIGNED, Jdot);
   return Jdot;
 }
 
 const pinocchio::Model &RobotModel::getModel() const { return model_; }
-const pinocchio::Data &RobotModel::getData() const { return data_; }
+pinocchio::Data &RobotModel::getData() { return data_; }
 
 } // namespace panda

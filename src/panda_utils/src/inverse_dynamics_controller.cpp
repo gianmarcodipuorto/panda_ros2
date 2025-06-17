@@ -2,6 +2,7 @@
 #include "franka/control_types.h"
 #include "franka/exception.h"
 #include "franka/rate_limiting.h"
+#include "franka/robot_state.h"
 #include "geometry_msgs/msg/accel.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose.hpp"
@@ -99,8 +100,8 @@ public:
         panda(urdf_robot_path, true) {
 
     // Declare parameters
-    this->declare_parameter<double>("Kp", 250.0);
-    this->declare_parameter<double>("Kd", 50.0);
+    this->declare_parameter<double>("Kp", 150.0);
+    this->declare_parameter<double>("Kd", 30.0);
     this->declare_parameter<double>("Md", 1.0);
     this->declare_parameter<double>("control_freq", 1000.0);
     this->declare_parameter<bool>("clamp", true);
@@ -118,6 +119,9 @@ public:
 
     if (use_robot) {
       panda_franka = franka::Robot(this->get_parameter("robot_ip").as_string());
+      RCLCPP_INFO_STREAM(this->get_logger(),
+                         "Connected to robot with ip "
+                             << this->get_parameter("robot_ip").as_string());
     }
 
     // Taking joint limits
@@ -214,6 +218,17 @@ public:
     robot_pose_pub = this->create_publisher<geometry_msgs::msg::PoseStamped>(
         panda_interface_names::panda_pose_state_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    joint_states_pub = this->create_publisher<JointState>(
+        panda_interface_names::joint_state_topic_name,
+        panda_interface_names::DEFAULT_TOPIC_QOS);
+  }
+
+  ~InverseDynamicsController() {
+    if (control_thread.joinable()) {
+      start_flag.store(false);
+      control_thread.join();
+    }
   }
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
@@ -246,22 +261,21 @@ public:
 
     if (use_robot) {
       panda_franka_model = panda_franka.value().loadModel();
+      joint_state_to_pub.position.resize(7);
+      joint_state_to_pub.velocity.resize(7);
+      joint_state_to_pub.effort.resize(7);
 
       robot_control_callback = [this](const franka::RobotState &state,
                                       franka::Duration dt) -> franka::Torques {
+        // If the thread flag is changed or a shutdown has been requested,
+        // always returns last command
         if (!(start_flag.load() && rclcpp::ok())) {
           // Send last commanded joint effort command
           return franka::MotionFinished(franka::Torques(state.tau_J_d));
         }
 
-        // Publish robot pose stamped
-        geometry_msgs::msg::PoseStamped current_pose;
-        current_pose.pose = convertMatrixToPose(state.O_T_EE);
-        current_pose.header.stamp = this->now();
-        robot_pose_pub->publish(current_pose);
-
-        Eigen::VectorXd control_input_vec;
-        Eigen::VectorXd y;
+        // Publish current pose and joint state
+        publish_robot_state_libfranka(state);
 
         // Get q and q_dot
         //
@@ -269,7 +283,7 @@ public:
             Eigen::Vector<double, 7>::Map(state.q.data(), state.q.size());
 
         Eigen::Vector<double, 7> current_joints_speed =
-            Eigen::Vector<double, 7>::Map(state.q_d.data(), state.q_d.size());
+            Eigen::Vector<double, 7>::Map(state.dq.data(), state.dq.size());
 
         // Calculate quantities for control
         // Calculated through libfranka lib for better accuracy
@@ -289,6 +303,7 @@ public:
         Eigen::Vector<double, 7> coriolis = Eigen::Vector<double, 7>::Map(
             this->panda_franka_model.value().coriolis(state).data());
 
+        Eigen::VectorXd y;
         // If compliance mode: Kp = 0
         if (compliance_mode.load()) {
           y = desired_joints_accelerations +
@@ -300,24 +315,32 @@ public:
         }
 
         // Inverse dynamics torque commanded
-        control_input_vec = mass_matrix * y + coriolis;
+        Eigen::VectorXd control_input_vec = mass_matrix * y + coriolis;
 
         // Clamping control input
         // Torque limits for fr3 indicated by libfranka lib
         //
         // https://frankaemika.github.io/docs/control_parameters.html#limits-for-franka-research-3
         //
-        // Clamp signal except on first iteration e.g. Duration == 0
-        if (clamp && dt.toSec() != 0.0) {
+        // The value of last control input on first iteration is 0. Assuming a
+        // fake cycle before the first one with 1 kHz freq
+        //
+        // Clamp tau_dot
+        if (dt.toSec() == 0.0) {
+          clamp_control_speed(control_input_vec, 1.0 / 1e3);
+        } else {
           clamp_control_speed(control_input_vec, dt.toSec());
-          clamp_control(control_input_vec);
         }
+
+        // Clamp tau
+        clamp_control(control_input_vec);
 
         // Apply control
         //
-        RCLCPP_DEBUG_STREAM(this->get_logger(), control_input_vec);
-        publish_efforts(control_input_vec);
+        // RCLCPP_DEBUG_STREAM(this->get_logger(), control_input_vec);
+        // publish_efforts(control_input_vec);
 
+        last_control_input = control_input_vec;
         std::array<double, 7> tau;
         for (size_t i = 0; i < 7; ++i) {
           tau[i] = control_input_vec[i];
@@ -332,8 +355,9 @@ public:
   CallbackReturn on_activate(const rclcpp_lifecycle::State &) override {
 
     RCLCPP_INFO(get_logger(), "Activating...");
-    // In activate can't receive callback messages. Setting current config to 0
-    // vector (based on joint limits)
+    /////////////////////////////////////////////////////////////////////////////////
+    // WARN: In activate can't receive callback messages. Setting current config
+    // to 0 vector (based on joint limits)
     desired_joints_position.resize(panda.getModel().nq);
     desired_joints_position.setZero();
     desired_joints_velocity.resize(panda.getModel().nq);
@@ -345,6 +369,9 @@ public:
 
     last_control_input.resize(panda.getModel().nq);
     for (int i = 0; i < last_control_input.size(); i++) {
+      // The last control input is indeed 0 when activated the first time,
+      // either with gazebo or libfranka lib, that considers only the tau_d as
+      // user commanded tau
       last_control_input[i] = 0.0;
     }
 
@@ -354,6 +381,8 @@ public:
       // Try-catch version
       control_thread = std::thread{[this]() {
         try {
+          RCLCPP_INFO_STREAM(this->get_logger(),
+                             "Starting control thread with real time robot");
           panda_franka->control(robot_control_callback);
         } catch (const franka::Exception &ex) {
           start_flag.store(false);
@@ -366,15 +395,16 @@ public:
       RCLCPP_INFO(this->get_logger(),
                   "Started control thread with real time robot");
       return CallbackReturn::SUCCESS;
+    } else {
+      // Start control loop thread
+      start_flag.store(true);
+      control_thread =
+          std::thread{std::bind(&InverseDynamicsController::control, this)};
+      RCLCPP_INFO(this->get_logger(),
+                  "Started control thread with simulated robot");
+
+      return CallbackReturn::SUCCESS;
     }
-
-    // Start control loop thread
-    start_flag.store(true);
-    control_thread =
-        std::thread{std::bind(&InverseDynamicsController::control, this)};
-    RCLCPP_INFO(this->get_logger(), "Started control thread");
-
-    return CallbackReturn::SUCCESS;
   }
 
   CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) override {
@@ -410,6 +440,7 @@ private:
 
   // Robot pose publisher
   Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr robot_pose_pub{};
+  Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_pub{};
 
   // Services
   rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr
@@ -421,6 +452,7 @@ private:
   std::optional<franka::Model> panda_franka_model;
   bool use_robot;
   JointState::SharedPtr current_joint_config{nullptr};
+  JointState joint_state_to_pub{};
   JointTorqueMeasureStamped::SharedPtr current_measured_joint_torques{nullptr};
   std::function<franka::Torques(const franka::RobotState &, franka::Duration)>
       robot_control_callback;
@@ -436,7 +468,7 @@ private:
   Eigen::VectorXd velocity_limits{};
   Eigen::VectorXd acceleration_limits{};
 
-  const std::string frame_id_name{"fr3_hand"};
+  const std::string frame_id_name{"fr3_link8"};
 
   pinocchio::SE3 T_0_b{};
 
@@ -502,6 +534,28 @@ private:
 
     clamp_vec(desired_joints_accelerations, -acceleration_limits,
               acceleration_limits);
+  }
+
+  void publish_robot_state_libfranka(const franka::RobotState &state) {
+
+    // Publish robot pose stamped
+    geometry_msgs::msg::PoseStamped current_pose;
+    // WARN: Verify that this is the right frame considered in simulation
+    current_pose.pose = convertMatrixToPose(
+        panda_franka_model.value().pose(franka::Frame::kJoint7, state));
+    // current_pose.pose = convertMatrixToPose(state.O_T_EE);
+    current_pose.header.stamp = this->now();
+    robot_pose_pub->publish(current_pose);
+
+    // Publish joint state
+    joint_state_to_pub.header.stamp = this->now();
+    for (size_t i = 0; i < 7; i++) {
+      joint_state_to_pub.position[i] = state.q[i];
+      joint_state_to_pub.position[i] = state.dq[i];
+      joint_state_to_pub.position[i] = state.tau_J[i];
+    }
+
+    joint_states_pub->publish(joint_state_to_pub);
   }
 };
 
