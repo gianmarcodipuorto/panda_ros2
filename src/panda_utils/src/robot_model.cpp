@@ -32,7 +32,10 @@ RobotModel::RobotModel(const std::string &urdf_param_or_path,
 }
 
 Eigen::MatrixXd RobotModel::getMassMatrix(const Eigen::VectorXd &q) {
-  return pinocchio::crba(model_, data_, q);
+  pinocchio::crba(model_, data_, q);
+  data_.M.triangularView<Eigen::StrictlyLower>() =
+      data_.M.transpose().triangularView<Eigen::StrictlyLower>();
+  return data_.M;
 }
 
 Eigen::VectorXd RobotModel::getGravityVector(const Eigen::VectorXd &q) {
@@ -57,8 +60,9 @@ RobotModel::computeHessianTimesQDot(const Eigen::VectorXd &q,
   pinocchio::computeJointJacobiansTimeVariation(model_, data_, q, q_dot);
 
   Eigen::MatrixXd Jdot(6, model_.nv);
-  pinocchio::getFrameJacobianTimeVariation(model_, data_, model_.getFrameId(frame_id),
-                                           pinocchio::LOCAL_WORLD_ALIGNED, Jdot);
+  pinocchio::getFrameJacobianTimeVariation(
+      model_, data_, model_.getFrameId(frame_id),
+      pinocchio::LOCAL_WORLD_ALIGNED, Jdot);
 
   return Jdot * q_dot;
 }
@@ -72,7 +76,8 @@ RobotModel::computeAnalyticalJacobian(const Eigen::VectorXd &q,
 
   // 2. Geometric Jacobian
   Eigen::MatrixXd J_geo(6, model_.nv);
-  pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL_WORLD_ALIGNED, J_geo);
+  pinocchio::getFrameJacobian(model_, data_, frame_id,
+                              pinocchio::LOCAL_WORLD_ALIGNED, J_geo);
 
   // 3. Rotation matrix
   const Eigen::Matrix3d &R = data_.oMf[frame_id].rotation();
@@ -156,8 +161,8 @@ void RobotModel::computeAll(const Eigen::VectorXd &q,
 Eigen::MatrixXd RobotModel::getHessian(const std::string &frame_name) {
   const pinocchio::FrameIndex id = model_.getFrameId(frame_name);
   Eigen::MatrixXd Jdot(6, model_.nv);
-  pinocchio::getFrameJacobianTimeVariation(model_, data_, id, pinocchio::LOCAL_WORLD_ALIGNED,
-                                           Jdot);
+  pinocchio::getFrameJacobianTimeVariation(
+      model_, data_, id, pinocchio::LOCAL_WORLD_ALIGNED, Jdot);
   return Jdot;
 }
 
@@ -165,7 +170,8 @@ Eigen::MatrixXd
 RobotModel::getGeometricalJacobian(const std::string &frame_name) {
   const pinocchio::FrameIndex id = model_.getFrameId(frame_name);
   Eigen::MatrixXd Jdot(6, model_.nv);
-  pinocchio::getFrameJacobian(model_, data_, id, pinocchio::LOCAL_WORLD_ALIGNED, Jdot);
+  pinocchio::getFrameJacobian(model_, data_, id, pinocchio::LOCAL_WORLD_ALIGNED,
+                              Jdot);
   return Jdot;
 }
 

@@ -20,6 +20,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(realtime_tools REQUIRED)
 
 include_directories(
   include
@@ -59,7 +60,7 @@ add_executable(send_joints_effort_simple_client ./examples/send_joints_effort_cm
 ament_target_dependencies(send_joints_effort_simple_client rclcpp panda_interfaces std_msgs tf2_eigen)
 
 add_executable(joint_traj ./src/joint_traj.cpp)
-ament_target_dependencies(joint_traj rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs)
+ament_target_dependencies(joint_traj rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools)
 
 add_executable(cart_traj ./src/cart_traj.cpp)
 ament_target_dependencies(cart_traj rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs)
@@ -80,7 +81,7 @@ ament_target_dependencies(pd_grav_controller rclcpp panda_interfaces std_msgs tf
 target_link_libraries(pd_grav_controller robot_model)
 
 add_executable(inverse_dynamics_controller ./src/inverse_dynamics_controller.cpp)
-ament_target_dependencies(inverse_dynamics_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+ament_target_dependencies(inverse_dynamics_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools)
 target_link_libraries(inverse_dynamics_controller robot_model franka)
 
 add_executable(pd_grav_controller_demo ./examples/demo_pd_grav.cpp)
@@ -102,6 +103,9 @@ add_executable(impedance_controller ./src/impedance_controller.cpp)
 ament_target_dependencies(impedance_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 target_link_libraries(impedance_controller robot_model franka)
 
+add_executable(joint_traj_test ./examples/joint_trajectory_test.cpp)
+ament_target_dependencies(joint_traj_test rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+
 install(TARGETS
   send_joints_cmd_server
   send_joints_cmd_simple_client
@@ -119,6 +123,7 @@ install(TARGETS
   cart_traj_example
   joint_traj_example
   impedance_controller
+  joint_traj_test
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -17,9 +17,12 @@
 #include "panda_utils/constants.hpp"
 #include "panda_utils/robot.hpp"
 #include "panda_utils/robot_model.hpp"
+#include "realtime_tools/realtime_tools/realtime_helpers.hpp"
+#include "realtime_tools/realtime_tools/realtime_publisher.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "spatial/explog-quaternion.hpp"
 #include "spatial/fwd.hpp"
+#include "std_msgs/msg/float64.hpp"
 #include "tf2_eigen/tf2_eigen/tf2_eigen.hpp"
 #include <Eigen/src/Core/DiagonalMatrix.h>
 #include <Eigen/src/Core/Matrix.h>
@@ -43,8 +46,10 @@
 #include <rclcpp/service.hpp>
 #include <rclcpp/subscription.hpp>
 #include <rclcpp/subscription_base.hpp>
+#include <rclcpp/time.hpp>
 #include <rclcpp/utilities.hpp>
 #include <rclcpp_lifecycle/rclcpp_lifecycle/lifecycle_node.hpp>
+#include <realtime_tools/realtime_tools/realtime_publisher.hpp>
 #include <thread>
 
 template <typename messageT> using Publisher = rclcpp::Publisher<messageT>;
@@ -100,8 +105,8 @@ public:
         panda(urdf_robot_path, true) {
 
     // Declare parameters
-    this->declare_parameter<double>("Kp", 150.0);
-    this->declare_parameter<double>("Kd", 30.0);
+    this->declare_parameter<double>("Kp", 700.0);
+    this->declare_parameter<double>("Kd", 50.0);
     this->declare_parameter<double>("Md", 1.0);
     this->declare_parameter<double>("control_freq", 1000.0);
     this->declare_parameter<bool>("clamp", true);
@@ -125,6 +130,8 @@ public:
     }
 
     // Taking joint limits
+    // WARNING: Joint limits are defined in the urdf, change their value into
+    // the urdf
 
     RCLCPP_INFO(this->get_logger(), "Getting effort speed limits");
     effort_limits = panda.getModel().effortLimit;
@@ -139,14 +146,25 @@ public:
     joint_min_limits = panda.getModel().lowerPositionLimit;
     joint_max_limits = panda.getModel().upperPositionLimit;
 
+    // joint_min_limits = Eigen::Vector<double, 7>{
+    //     -2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973};
+    //
+    // joint_max_limits = Eigen::Vector<double, 7>{
+    //   2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973};
+
     RCLCPP_INFO(this->get_logger(), "Getting velocity limits");
     velocity_limits = panda.getModel().velocityLimit;
+    // velocity_limits = Eigen::Vector<double,
+    // 7>{2.1750, 2.1750, 2.1750, 2.1750,
+    //                                            2.6100, 2.6100, 2.6100};
 
     RCLCPP_INFO(this->get_logger(), "Getting acceleration limits");
-    acceleration_limits.resize(panda.getModel().nq);
-    for (int i = 0; i < panda.getModel().nq; i++) {
-      acceleration_limits[i] = 10.0;
-    }
+    // acceleration_limits.resize(panda.getModel().nq);
+    // for (int i = 0; i < panda.getModel().nq; i++) {
+    //   acceleration_limits[i] = 10.0;
+    // }
+    acceleration_limits =
+        Eigen::Vector<double, 7>{15.0, 7.5, 10.0, 12.5, 15.0, 20.0, 20.0};
 
     auto set_joint_state = [this](const JointState::SharedPtr msg) {
       current_joint_config = msg;
@@ -167,21 +185,27 @@ public:
             panda_interface_names::DEFAULT_TOPIC_QOS,
             set_joint_measured_torques);
 
-    auto set_desired_joints_command = [this](
-                                          const JointsCommand::SharedPtr msg) {
-      RCLCPP_DEBUG_STREAM(this->get_logger(), "Received joint command");
+    auto set_desired_joints_command =
+        [this](const JointsCommand::SharedPtr msg) {
+          RCLCPP_DEBUG_STREAM(this->get_logger(), "Received joint command");
 
-      desired_joints_position =
-          Eigen::VectorXd::Map(msg->positions.data(), msg->positions.size());
+          desired_joints_position.resize(msg->positions.size());
+          for (size_t i = 0; i < msg->positions.size(); i++) {
+            desired_joints_position[i] = msg->positions[i];
+          }
 
-      desired_joints_velocity =
-          Eigen::VectorXd::Map(msg->velocities.data(), msg->velocities.size());
+          desired_joints_velocity.resize(msg->velocities.size());
+          for (size_t i = 0; i < msg->velocities.size(); i++) {
+            desired_joints_velocity[i] = msg->velocities[i];
+          }
 
-      desired_joints_accelerations = Eigen::VectorXd::Map(
-          msg->accelerations.data(), msg->accelerations.size());
+          desired_joints_accelerations.resize(msg->accelerations.size());
+          for (size_t i = 0; i < msg->accelerations.size(); i++) {
+            desired_joints_accelerations[i] = msg->accelerations[i];
+          }
 
-      clamp_joint_config();
-    };
+          clamp_joint_config();
+        };
 
     desired_joint_command_sub = this->create_subscription<JointsCommand>(
         panda_interface_names::panda_joint_cmd_topic_name,
@@ -190,6 +214,49 @@ public:
     robot_joint_efforts_pub = this->create_publisher<JointsEffort>(
         panda_interface_names::panda_effort_cmd_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    robot_joint_efforts_pub_debug = this->create_publisher<JointsEffort>(
+        "debug/cmd/effort_no_gravity",
+        panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    gravity_contribute_debug = this->create_publisher<JointsEffort>(
+        "debug/cmd/gravity", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    position_error_debug = this->create_publisher<JointsPos>(
+        "debug/error/joint_position", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    velocity_error_debug = this->create_publisher<JointsPos>(
+        "debug/error/joint_velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    desired_position_debug = this->create_publisher<JointsPos>(
+        "debug/desired_joint_position",
+        panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    desired_velocity_debug = this->create_publisher<JointsPos>(
+        "debug/desired_joint_velocity",
+        panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    desired_acceleration_debug = this->create_publisher<JointsPos>(
+        "debug/desired_joint_acceleration",
+        panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    current_position_debug = this->create_publisher<JointsPos>(
+        "debug/current_joint_position",
+        panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    current_velocity_debug = this->create_publisher<JointsPos>(
+        "debug/current_joint_velocity",
+        panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    y_contribute_debug = this->create_publisher<JointsEffort>(
+        "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    y_desired_accel_debug = this->create_publisher<JointsEffort>(
+        "debug/cmd/y_contribute_desired_accel",
+        panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    mass_matrix_val_debug = this->create_publisher<std_msgs::msg::Float64>(
+        "debug/mass_matrix_norm", panda_interface_names::DEFAULT_TOPIC_QOS);
 
     // Compliance mode Service
 
@@ -215,13 +282,17 @@ public:
             panda_interface_names::set_compliance_mode_service_name,
             compliance_mode_cb);
 
-    robot_pose_pub = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-        panda_interface_names::panda_pose_state_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+    robot_pose_pub = std::make_shared<
+        realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
+        this->create_publisher<geometry_msgs::msg::PoseStamped>(
+            panda_interface_names::panda_pose_state_topic_name,
+            panda_interface_names::DEFAULT_TOPIC_QOS));
 
-    joint_states_pub = this->create_publisher<JointState>(
-        panda_interface_names::joint_state_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+    joint_states_pub =
+        std::make_shared<realtime_tools::RealtimePublisher<JointState>>(
+            this->create_publisher<JointState>(
+                panda_interface_names::joint_state_topic_name,
+                panda_interface_names::DEFAULT_TOPIC_QOS));
   }
 
   ~InverseDynamicsController() {
@@ -252,7 +323,7 @@ public:
                     : "system clock")
             << ", and control loop rate (Hz) "
             << 1.0 / (control_loop_rate->period().count() * 1e-9)
-            << " with Kp = " << Kp << " and Kd = " << Kd);
+            << " with Kp = " << Kp << ",Kd = " << Kd << " and Md = " << Md);
 
     Eigen::Vector3d translation = Eigen::Vector3d{0, 0, 0.75};
     Eigen::Quaterniond orientation = Eigen::Quaterniond::Identity();
@@ -265,8 +336,17 @@ public:
       joint_state_to_pub.velocity.resize(7);
       joint_state_to_pub.effort.resize(7);
 
-      robot_control_callback = [this](const franka::RobotState &state,
-                                      franka::Duration dt) -> franka::Torques {
+      Eigen::Vector<double, 7> KP_{Kp, Kp, Kp, Kp, Kp * 3, Kp * 3, Kp * 4};
+      Eigen::Matrix<double, 7, 7> KP = Eigen::Matrix<double, 7, 7>::Identity();
+      KP.diagonal() = KP_;
+
+      Eigen::Vector<double, 7> KD_{Kd, Kd, Kd, Kd, Kd * 3, Kd * 3, Kd * 4};
+      Eigen::Matrix<double, 7, 7> KD = Eigen::Matrix<double, 7, 7>::Identity();
+      KD.diagonal() = KD_;
+
+      robot_control_callback = [this, KP,
+                                KD](const franka::RobotState &state,
+                                    franka::Duration dt) -> franka::Torques {
         // If the thread flag is changed or a shutdown has been requested,
         // always returns last command
         if (!(start_flag.load() && rclcpp::ok())) {
@@ -279,11 +359,15 @@ public:
 
         // Get q and q_dot
         //
-        Eigen::Vector<double, 7> current_joints_config_vec =
-            Eigen::Vector<double, 7>::Map(state.q.data(), state.q.size());
+        Eigen::Vector<double, 7> current_joints_config_vec;
+        for (size_t i = 0; i < 7; i++) {
+          current_joints_config_vec[i] = state.q[i];
+        }
 
-        Eigen::Vector<double, 7> current_joints_speed =
-            Eigen::Vector<double, 7>::Map(state.dq.data(), state.dq.size());
+        Eigen::Vector<double, 7> current_joints_speed;
+        for (size_t i = 0; i < 7; i++) {
+          current_joints_speed[i] = state.dq[i];
+        }
 
         // Calculate quantities for control
         // Calculated through libfranka lib for better accuracy
@@ -295,23 +379,22 @@ public:
         // - tau_f = torque required to compensate motor friction
         //
         // B(q)
-        Eigen::Matrix<double, 7, 7> mass_matrix =
-            Eigen::Matrix<double, 7, 7>::Map(
-                this->panda_franka_model.value().mass(state).data());
+        Eigen::Map<const Eigen::Matrix<double, 7, 7>> mass_matrix(
+            this->panda_franka_model.value().mass(state).data());
 
         // Calculate only the coriolis term for the n(q, q_dot) term
-        Eigen::Vector<double, 7> coriolis = Eigen::Vector<double, 7>::Map(
+        Eigen::Map<const Eigen::Matrix<double, 7, 1>> coriolis(
             this->panda_franka_model.value().coriolis(state).data());
 
-        Eigen::VectorXd y;
+        Eigen::Vector<double, 7> y;
         // If compliance mode: Kp = 0
         if (compliance_mode.load()) {
           y = desired_joints_accelerations +
-              Kd * (desired_joints_velocity - current_joints_speed);
+              KD * (desired_joints_velocity - current_joints_speed);
         } else {
           y = desired_joints_accelerations +
-              Kd * (desired_joints_velocity - current_joints_speed) +
-              Kp * (desired_joints_position - current_joints_config_vec);
+              KD * (desired_joints_velocity - current_joints_speed) +
+              KP * (desired_joints_position - current_joints_config_vec);
         }
 
         // Inverse dynamics torque commanded
@@ -324,21 +407,20 @@ public:
         //
         // The value of last control input on first iteration is 0. Assuming a
         // fake cycle before the first one with 1 kHz freq
-        //
+        //////////////////////////////////////////////////////////////////////
+        // WARN: tau speed not clamped //////////////////////////////////
+        //////////////////////////////////////////////////////////////////////
         // Clamp tau_dot
-        if (dt.toSec() == 0.0) {
-          clamp_control_speed(control_input_vec, 1.0 / 1e3);
-        } else {
-          clamp_control_speed(control_input_vec, dt.toSec());
-        }
+        // if (dt.toSec() == 0.0) {
+        //   clamp_control_speed(control_input_vec, 1.0 / 1e3);
+        // } else {
+        //   clamp_control_speed(control_input_vec, dt.toSec());
+        // }
 
         // Clamp tau
         clamp_control(control_input_vec);
 
         // Apply control
-        //
-        // RCLCPP_DEBUG_STREAM(this->get_logger(), control_input_vec);
-        // publish_efforts(control_input_vec);
 
         last_control_input = control_input_vec;
         std::array<double, 7> tau;
@@ -365,6 +447,9 @@ public:
     desired_joints_accelerations.resize(panda.getModel().nq);
     desired_joints_accelerations.setZero();
 
+    // Initial config
+    desired_joints_position[6] = 1.0;
+
     clamp_joint_config();
 
     last_control_input.resize(panda.getModel().nq);
@@ -377,12 +462,29 @@ public:
 
     if (use_robot) {
       start_flag.store(true);
-
+      if (!realtime_tools::has_realtime_kernel()) {
+        RCLCPP_ERROR(this->get_logger(),
+                     "The robot thread has no real time kernel, shutting down");
+        start_flag.store(false);
+        rclcpp::shutdown();
+      }
       // Try-catch version
       control_thread = std::thread{[this]() {
+        // Configuring real time thread
+        if (realtime_tools::configure_sched_fifo(99)) {
+          RCLCPP_INFO(this->get_logger(), "Set real time priority");
+        } else {
+          RCLCPP_ERROR(this->get_logger(),
+                       "Real time priority not set, shutting down");
+          start_flag.store(false);
+          rclcpp::shutdown();
+        }
+
         try {
           RCLCPP_INFO_STREAM(this->get_logger(),
                              "Starting control thread with real time robot");
+          // control function says "sets realtime priority for the current
+          // thread"
           panda_franka->control(robot_control_callback);
         } catch (const franka::Exception &ex) {
           start_flag.store(false);
@@ -390,8 +492,6 @@ public:
         }
       }};
 
-      // Not try-catch version
-      // panda_franka->control(robot_control_callback);
       RCLCPP_INFO(this->get_logger(),
                   "Started control thread with real time robot");
       return CallbackReturn::SUCCESS;
@@ -411,7 +511,9 @@ public:
     RCLCPP_INFO(get_logger(), "Deactivating...");
     // Stop thread and join it
     start_flag.store(false);
-    control_thread.join();
+    if (control_thread.joinable()) {
+      control_thread.join();
+    }
     return CallbackReturn::SUCCESS;
   }
 
@@ -424,7 +526,9 @@ public:
     RCLCPP_INFO(get_logger(), "Shutting down...");
     // Stop thread and join it
     start_flag.store(false);
-    control_thread.join();
+    if (control_thread.joinable()) {
+      control_thread.join();
+    }
     return CallbackReturn::SUCCESS;
   }
 
@@ -437,10 +541,24 @@ private:
 
   // Commands publisher
   Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub{};
+  Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub_debug{};
+  Publisher<JointsEffort>::SharedPtr gravity_contribute_debug{};
+  Publisher<JointsEffort>::SharedPtr y_contribute_debug{};
+  Publisher<JointsEffort>::SharedPtr y_desired_accel_debug{};
+  Publisher<JointsPos>::SharedPtr position_error_debug{};
+  Publisher<JointsPos>::SharedPtr velocity_error_debug{};
+  Publisher<JointsPos>::SharedPtr desired_position_debug{};
+  Publisher<JointsPos>::SharedPtr desired_velocity_debug{};
+  Publisher<JointsPos>::SharedPtr desired_acceleration_debug{};
+  Publisher<JointsPos>::SharedPtr current_position_debug{};
+  Publisher<JointsPos>::SharedPtr current_velocity_debug{};
+  Publisher<std_msgs::msg::Float64>::SharedPtr mass_matrix_val_debug{};
 
   // Robot pose publisher
-  Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr robot_pose_pub{};
-  Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_pub{};
+  realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
+      robot_pose_pub{};
+  realtime_tools::RealtimePublisher<sensor_msgs::msg::JointState>::SharedPtr
+      joint_states_pub{};
 
   // Services
   rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr
@@ -463,10 +581,10 @@ private:
 
   Eigen::VectorXd effort_limits{};
   Eigen::VectorXd effort_speed_limits{};
-  Eigen::VectorXd joint_min_limits{};
-  Eigen::VectorXd joint_max_limits{};
-  Eigen::VectorXd velocity_limits{};
-  Eigen::VectorXd acceleration_limits{};
+  Eigen::Vector<double, 7> joint_min_limits{};
+  Eigen::Vector<double, 7> joint_max_limits{};
+  Eigen::Vector<double, 7> velocity_limits{};
+  Eigen::Vector<double, 7> acceleration_limits{};
 
   const std::string frame_id_name{"fr3_link8"};
 
@@ -507,7 +625,8 @@ private:
   void clamp_control_speed(Eigen::VectorXd &control_input, const double dt) {
 
     for (int i = 0; i < control_input.size(); i++) {
-      if (abs(control_input[i] - last_control_input[i]) / dt) {
+      if (abs(control_input[i] - last_control_input[i]) / dt >
+          effort_speed_limits[i]) {
         if (control_input[i] - last_control_input[i] < 0.0) {
           control_input[i] =
               last_control_input[i] - effort_speed_limits[i] * dt;
@@ -519,8 +638,9 @@ private:
     }
   }
 
-  void clamp_vec(Eigen::VectorXd &vec, const Eigen::VectorXd &min_limits,
-                 const Eigen::VectorXd &max_limits) {
+  void clamp_vec(Eigen::VectorXd &vec,
+                 const Eigen::Vector<double, 7> &min_limits,
+                 const Eigen::Vector<double, 7> &max_limits) {
     for (int i = 0; i < vec.size(); ++i) {
       vec[i] = std::min(std::max(vec[i], min_limits[i]), max_limits[i]);
     }
@@ -528,12 +648,46 @@ private:
 
   void clamp_joint_config() {
 
-    clamp_vec(desired_joints_position, joint_min_limits, joint_max_limits);
-
+    for (int i = 0; i < desired_joints_position.size(); ++i) {
+      desired_joints_position[i] =
+          std::min(std::max(desired_joints_position[i], joint_min_limits[i]),
+                   joint_max_limits[i]);
+      // Clamp associated joint speed and acceleration if joint position
+      // saturated
+      if (desired_joints_position[i] == joint_min_limits[i] ||
+          desired_joints_position[i] == joint_max_limits[i]) {
+        desired_joints_velocity[i] = 0.0;
+        desired_joints_accelerations[i] = 0.0;
+      }
+    }
     clamp_vec(desired_joints_velocity, -velocity_limits, velocity_limits);
 
     clamp_vec(desired_joints_accelerations, -acceleration_limits,
               acceleration_limits);
+    // RCLCPP_INFO_STREAM(
+    //     this->get_logger(),
+    //     "Desired configuration after clamping: ["
+    //         << desired_joints_position[0] << ", " <<
+    //         desired_joints_position[1]
+    //         << ", " << desired_joints_position[2] << ", "
+    //         << desired_joints_position[3] << ", " <<
+    //         desired_joints_position[4]
+    //         << ", " << desired_joints_position[5] << ", "
+    //         << desired_joints_position[6] << "]\n"
+    //         << "[" << desired_joints_velocity[0] << ", "
+    //         << desired_joints_velocity[1] << ", " <<
+    //         desired_joints_velocity[2]
+    //         << ", " << desired_joints_velocity[3] << ", "
+    //         << desired_joints_velocity[4] << ", " <<
+    //         desired_joints_velocity[5]
+    //         << ", " << desired_joints_velocity[6] << "]\n"
+    //         << "[" << desired_joints_accelerations[0] << ", "
+    //         << desired_joints_accelerations[1] << ", "
+    //         << desired_joints_accelerations[2] << ", "
+    //         << desired_joints_accelerations[3] << ", "
+    //         << desired_joints_accelerations[4] << ", "
+    //         << desired_joints_accelerations[5] << ", "
+    //         << desired_joints_accelerations[6] << "]\n");
   }
 
   void publish_robot_state_libfranka(const franka::RobotState &state) {
@@ -545,7 +699,7 @@ private:
         panda_franka_model.value().pose(franka::Frame::kJoint7, state));
     // current_pose.pose = convertMatrixToPose(state.O_T_EE);
     current_pose.header.stamp = this->now();
-    robot_pose_pub->publish(current_pose);
+    robot_pose_pub->tryPublish(current_pose);
 
     // Publish joint state
     joint_state_to_pub.header.stamp = this->now();
@@ -555,7 +709,7 @@ private:
       joint_state_to_pub.position[i] = state.tau_J[i];
     }
 
-    joint_states_pub->publish(joint_state_to_pub);
+    joint_states_pub->tryPublish(joint_state_to_pub);
   }
 };
 
@@ -565,8 +719,25 @@ void InverseDynamicsController::control() {
   //
 
   Eigen::VectorXd non_linear_effects;
+  Eigen::VectorXd gravity;
   Eigen::VectorXd control_input;
   Eigen::VectorXd y;
+
+  JointsEffort cmd;
+  JointsPos pos;
+  std_msgs::msg::Float64 mass;
+
+  Eigen::Vector<double, 7> KP_{Kp, Kp, Kp, Kp, Kp * 3, Kp * 3, Kp * 4};
+  // Eigen::Vector<double, 7> KP_{Kp, Kp, Kp, Kp, Kp, Kp, Kp};
+  Eigen::Matrix<double, 7, 7> KP = Eigen::Matrix<double, 7, 7>::Identity();
+  KP.diagonal() = KP_;
+
+  Eigen::Vector<double, 7> KD_{Kd, Kd, Kd, Kd, Kd * 3, Kd * 3, Kd * 4};
+  // Eigen::Vector<double, 7> KD_{Kd, Kd, Kd, Kd, Kd, Kd, Kd};
+  Eigen::Matrix<double, 7, 7> KD = Eigen::Matrix<double, 7, 7>::Identity();
+  KD.diagonal() = KD_;
+
+  rclcpp::Time last_control_cycle = rclcpp::Time{0};
 
   RCLCPP_INFO_STREAM(
       this->get_logger(),
@@ -579,16 +750,29 @@ void InverseDynamicsController::control() {
 
   while (start_flag.load() && rclcpp::ok()) {
 
+    pos.header.stamp = this->now();
+
     // Update robot model
     //
-    Eigen::VectorXd current_joints_config_vec =
-        Eigen::VectorXd::Map(current_joint_config->position.data(),
-                             current_joint_config->position.size());
+    // Eigen::VectorXd current_joints_config_vec =
+    //     Eigen::VectorXd::Map(current_joint_config->position.data(),
+    //                          current_joint_config->position.size());
 
-    Eigen::VectorXd current_joints_speed =
-        Eigen::VectorXd::Map(current_joint_config->velocity.data(),
-                             current_joint_config->velocity.size());
+    Eigen::VectorXd current_joints_config_vec;
+    current_joints_config_vec.resize(current_joint_config->position.size());
+    for (size_t i = 0; i < current_joint_config->position.size(); i++) {
+      current_joints_config_vec[i] = current_joint_config->position[i];
+    }
 
+    // Eigen::VectorXd current_joints_speed =
+    //     Eigen::VectorXd::Map(current_joint_config->velocity.data(),
+    //                          current_joint_config->velocity.size());
+
+    Eigen::VectorXd current_joints_speed;
+    current_joints_speed.resize(current_joint_config->position.size());
+    for (size_t i = 0; i < current_joint_config->position.size(); i++) {
+      current_joints_speed[i] = current_joint_config->velocity[i];
+    }
     panda.computeAll(current_joints_config_vec, current_joints_speed);
 
     // Calculate quantities for control
@@ -597,33 +781,104 @@ void InverseDynamicsController::control() {
     // Doesn't account for friction
     non_linear_effects = panda.getNonLinearEffects(current_joints_config_vec,
                                                    current_joints_speed);
+    gravity = panda.getGravityVector(current_joints_config_vec);
+
+    auto err_pos = desired_joints_position - current_joints_config_vec;
+    auto err_vel = desired_joints_velocity - current_joints_speed;
+    auto mass_matrix = panda.getMassMatrix(current_joints_config_vec);
+    auto y_accel = mass_matrix * Md * desired_joints_accelerations;
 
     if (compliance_mode.load()) {
       y = Md * desired_joints_accelerations +
-          Kd * (desired_joints_velocity - current_joints_speed);
+          KD * (desired_joints_velocity - current_joints_speed);
     } else {
-      y = Md * desired_joints_accelerations +
-          Kd * (desired_joints_velocity - current_joints_speed) +
-          Kp * (desired_joints_position - current_joints_config_vec);
+      y = Md * desired_joints_accelerations + KD * (err_vel) + KP * (err_pos);
     }
 
-    control_input =
-        panda.getMassMatrix(current_joints_config_vec) * y + non_linear_effects;
+    // Consider control input without the gravitational contribute
+    control_input = mass_matrix * y + non_linear_effects - gravity;
+
+    // RCLCPP_INFO_STREAM(this->get_logger(),
+    //                    panda.getMassMatrix(current_joints_config_vec).row(1));
 
     // Clamping control input
     //
+    // WARN: This section has to clamp the control signal WITHOUT the gravity
+    // (and motor friction) contributions as per libfranka library logic on
+    // commanded torque.
     if (clamp) {
-      clamp_control_speed(control_input,
-                          (control_loop_rate->period().count() * 1e-9));
+      // clamp_control_speed(control_input,
+      //                     (control_loop_rate->period().count() * 1e-9));
       clamp_control(control_input);
     }
 
     // Apply control
     //
     RCLCPP_DEBUG_STREAM(this->get_logger(), control_input);
-    publish_efforts(control_input);
+    // Re-sum the gravitational effort contribute
+    publish_efforts(control_input + gravity);
 
-    // Save last control input
+    cmd.header.stamp = this->now();
+
+    for (int i = 0; i < control_input.size(); i++) {
+      cmd.effort_values[i] = control_input[i];
+    }
+    robot_joint_efforts_pub_debug->publish(cmd);
+
+    for (int i = 0; i < gravity.size(); i++) {
+      cmd.effort_values[i] = gravity[i];
+    }
+    gravity_contribute_debug->publish(cmd);
+
+    for (int i = 0; i < y.size(); i++) {
+      cmd.effort_values[i] = y[i];
+    }
+    y_contribute_debug->publish(cmd);
+
+    for (int i = 0; i < y.size(); i++) {
+      cmd.effort_values[i] = y_accel[i];
+    }
+    y_desired_accel_debug->publish(cmd);
+
+    for (int i = 0; i < err_pos.size(); i++) {
+      pos.joint_values[i] = err_pos[i];
+    }
+    position_error_debug->publish(pos);
+
+    for (int i = 0; i < err_pos.size(); i++) {
+      pos.joint_values[i] = err_vel[i];
+    }
+    velocity_error_debug->publish(pos);
+
+    for (int i = 0; i < err_pos.size(); i++) {
+      pos.joint_values[i] = current_joints_config_vec[i];
+    }
+    current_position_debug->publish(pos);
+
+    for (int i = 0; i < err_pos.size(); i++) {
+      pos.joint_values[i] = current_joints_speed[i];
+    }
+    current_velocity_debug->publish(pos);
+
+    for (int i = 0; i < err_pos.size(); i++) {
+      pos.joint_values[i] = desired_joints_position[i];
+    }
+    desired_position_debug->publish(pos);
+
+    for (int i = 0; i < err_pos.size(); i++) {
+      pos.joint_values[i] = desired_joints_velocity[i];
+    }
+    desired_velocity_debug->publish(pos);
+
+    for (int i = 0; i < err_pos.size(); i++) {
+      pos.joint_values[i] = desired_joints_accelerations[i];
+    }
+    desired_acceleration_debug->publish(pos);
+
+    mass.data = panda.getMassMatrix(current_joints_config_vec).norm();
+    mass_matrix_val_debug->publish(mass);
+
+    // Save last control input without the gravitational contribute
     //
     last_control_input = control_input;
 
@@ -631,7 +886,7 @@ void InverseDynamicsController::control() {
     geometry_msgs::msg::PoseStamped current_pose;
     current_pose.pose = panda.getPose(frame_id_name);
     current_pose.header.stamp = this->now();
-    robot_pose_pub->publish(current_pose);
+    robot_pose_pub->tryPublish(current_pose);
 
     // Sleep
     //

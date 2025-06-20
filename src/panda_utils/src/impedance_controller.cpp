@@ -3,10 +3,12 @@
 #include "franka/exception.h"
 #include "franka/rate_limiting.h"
 #include "geometry_msgs/msg/accel.hpp"
+#include "geometry_msgs/msg/accel_stamped.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "multibody/fwd.hpp"
 #include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
 #include "panda_interfaces/msg/joints_command.hpp"
@@ -34,6 +36,8 @@
 #include <exception>
 #include <franka/model.h>
 #include <franka/robot.h>
+#include <geometry_msgs/msg/accel_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <memory>
 #include <ratio>
 #include <rcl/time.h>
@@ -51,8 +55,11 @@
 
 template <typename messageT> using Publisher = rclcpp::Publisher<messageT>;
 using geometry_msgs::msg::Accel;
+using geometry_msgs::msg::AccelStamped;
 using geometry_msgs::msg::Pose;
+using geometry_msgs::msg::PoseStamped;
 using geometry_msgs::msg::Twist;
+using geometry_msgs::msg::TwistStamped;
 using panda_interfaces::msg::JointsCommand;
 using panda_interfaces::msg::JointsEffort;
 using panda_interfaces::msg::JointsPos;
@@ -205,9 +212,39 @@ public:
         panda_interface_names::min_singular_value_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS);
 
-    pose_error = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-        panda_interface_names::pose_error_topic_name,
+    // DEBUGGING
+    //
+
+    robot_joint_efforts_pub_debug = this->create_publisher<JointsEffort>(
+        "debug/cmd/effort_no_gravity",
         panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    gravity_contribute_debug = this->create_publisher<JointsEffort>(
+        "debug/cmd/gravity", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    pose_error_debug = this->create_publisher<geometry_msgs::msg::PoseStamped>(
+        "debug/error/pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    velocity_error_debug = this->create_publisher<TwistStamped>(
+        "debug/error/velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    desired_pose_debug = this->create_publisher<PoseStamped>(
+        "debug/desired_pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    desired_velocity_debug = this->create_publisher<TwistStamped>(
+        "debug/desired_velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    desired_acceleration_debug = this->create_publisher<AccelStamped>(
+        "debug/desired_acceleration", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    current_pose_debug = this->create_publisher<PoseStamped>(
+        "debug/current_pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    current_velocity_debug = this->create_publisher<TwistStamped>(
+        "debug/current_velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    y_contribute_debug = this->create_publisher<JointsEffort>(
+        "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS);
   }
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
@@ -397,9 +434,18 @@ private:
   Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub{};
 
   // Robot pose publisher and debug
-  Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr robot_pose_pub{};
+  Publisher<PoseStamped>::SharedPtr robot_pose_pub{};
   Publisher<std_msgs::msg::Float64>::SharedPtr min_singular_val_pub{};
-  Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_error{};
+  Publisher<PoseStamped>::SharedPtr pose_error_debug{};
+  Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub_debug{};
+  Publisher<JointsEffort>::SharedPtr gravity_contribute_debug{};
+  Publisher<JointsEffort>::SharedPtr y_contribute_debug{};
+  Publisher<TwistStamped>::SharedPtr velocity_error_debug{};
+  Publisher<PoseStamped>::SharedPtr desired_pose_debug{};
+  Publisher<TwistStamped>::SharedPtr desired_velocity_debug{};
+  Publisher<AccelStamped>::SharedPtr desired_acceleration_debug{};
+  Publisher<PoseStamped>::SharedPtr current_pose_debug{};
+  Publisher<TwistStamped>::SharedPtr current_velocity_debug{};
 
   // Services
   rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr
@@ -507,7 +553,13 @@ void ImpedanceController::control() {
 
   Eigen::Vector<double, 7> non_linear_effects;
   Eigen::Vector<double, 7> control_input;
+  Eigen::VectorXd gravity;
   Eigen::Vector<double, 7> y;
+  PoseStamped pose_debug;
+  TwistStamped twist_debug;
+  AccelStamped accel_debug;
+  std_msgs::msg::Float64 sigma;
+  JointsEffort cmd;
 
   RCLCPP_INFO_STREAM(
       this->get_logger(),
@@ -519,24 +571,49 @@ void ImpedanceController::control() {
           << desired_pose->orientation.z << "]");
 
   // Coefficient for dynamic lambda damping
-  double alpha = 30.0;
   double epsilon = 1e-1;
   double k_max = 0.7;
+  double alpha = 30.0;
+  
+
+  Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp, Kp, Kp};
+  Eigen::Matrix<double, 6, 6> KP = Eigen::Matrix<double, 6, 6>::Identity();
+  KP.diagonal() = KP_;
+
+  Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd, Kd, Kd};
+  Eigen::Matrix<double, 6, 6> KD = Eigen::Matrix<double, 6, 6>::Identity();
+  KD.diagonal() = KD_;
+
+  Eigen::Vector<double, 6> MD_{Md, Md, Md, Md, Md, Md};
+  Eigen::Matrix<double, 6, 6> MD = Eigen::Matrix<double, 6, 6>::Identity();
+  MD.diagonal() = MD_;
+  auto MD_1 = MD.inverse();
 
   while (start_flag.load() && rclcpp::ok()) {
 
-    Eigen::VectorXd current_joints_config_vec =
-        Eigen::VectorXd::Map(current_joint_config->position.data(),
-                             current_joint_config->position.size());
+    // RCLCPP_INFO(this->get_logger(), "Entered cycle");
+    pose_debug.header.stamp = this->now();
+    twist_debug.header.stamp = this->now();
+    accel_debug.header.stamp = this->now();
 
-    Eigen::VectorXd current_joints_speed =
-        Eigen::VectorXd::Map(current_joint_config->velocity.data(),
-                             current_joint_config->velocity.size());
-
-    double current_joints_config_doubles[7];
-    for (size_t i = 0; i < 7; i++) {
-      current_joints_config_doubles[i] = current_joint_config->position[i];
+    Eigen::VectorXd current_joints_config_vec;
+    current_joints_config_vec.resize(current_joint_config->position.size());
+    for (size_t i = 0; i < current_joint_config->position.size(); i++) {
+      current_joints_config_vec[i] = current_joint_config->position[i];
     }
+
+    Eigen::VectorXd current_joints_speed;
+    current_joints_speed.resize(current_joint_config->position.size());
+    for (size_t i = 0; i < current_joint_config->position.size(); i++) {
+      current_joints_speed[i] = current_joint_config->velocity[i];
+    }
+    // RCLCPP_INFO(this->get_logger(), "Computed terms");
+    panda.computeAll(current_joints_config_vec, current_joints_speed);
+
+    // double current_joints_config_doubles[7];
+    // for (size_t i = 0; i < 7; i++) {
+    //   current_joints_config_doubles[i] = current_joint_config->position[i];
+    // }
 
     panda.computeAll(current_joints_config_vec, current_joints_speed);
 
@@ -570,9 +647,6 @@ void ImpedanceController::control() {
     error_pose_vec(3) = error_quat.x();
     error_pose_vec(4) = error_quat.y();
     error_pose_vec(5) = error_quat.z();
-    // error_pose_vec(3) = 0.0;
-    // error_pose_vec(4) = 0.0;
-    // error_pose_vec(5) = 0.0;
 
     //
     // Get desired twist
@@ -592,6 +666,7 @@ void ImpedanceController::control() {
     desired_accel_vec(3) = desired_accel->angular.x;
     desired_accel_vec(4) = desired_accel->angular.y;
     desired_accel_vec(5) = desired_accel->angular.z;
+    // RCLCPP_INFO(this->get_logger(), "Got desired quantities");
 
     // Update robot model
     //
@@ -608,9 +683,13 @@ void ImpedanceController::control() {
                                                         Eigen::ComputeThinV);
     double sigma_min = svd.singularValues().tail(1)(0);
 
+    // RCLCPP_INFO(this->get_logger(), "Calculated jacob");
     // Doesn't account for friction
     non_linear_effects = panda.getNonLinearEffects(current_joints_config_vec,
                                                    current_joints_speed);
+    gravity = panda.getGravityVector(current_joints_config_vec);
+    auto mass_matrix = panda.getMassMatrix(current_joints_config_vec);
+
     Eigen::Matrix<double, 7, 6> jacobian_pinv;
     // STATIC LAMBDA
     // jacobian_pinv = jacobian.transpose() *
@@ -619,23 +698,26 @@ void ImpedanceController::control() {
     //                     .inverse();
 
     // DYNAMIC LAMBDA BASED ON CONDITION NUMBER
-    double lambda = sigma_min <= epsilon
-                        ? k_max * (pow(sigma_min, 2) / pow(epsilon, 2))
-                        : 0.0;
-    // double lambda = std::exp(-alpha * sigma_min);
+    // double lambda = sigma_min <= epsilon
+    //                     ? k_max * (pow(sigma_min, 2) / pow(epsilon, 2))
+    //                     : 0.0;
+    double lambda = std::exp(-alpha * sigma_min);
     jacobian_pinv = jacobian.transpose() *
                     (jacobian * jacobian.transpose() +
                      lambda * Eigen::Matrix<double, 6, 6>::Identity())
                         .inverse();
 
     // Calculate J_dot * q_dot
+    auto current_twist = jacobian * current_joints_speed;
+    auto error_twist = desired_twist_vec - current_twist;
 
+    // RCLCPP_INFO(this->get_logger(), "Calculating control");
     if (compliance_mode.load()) {
       y = jacobian_pinv * (1 / Md) *
           (
 
               Md * desired_accel_vec +
-              Kd * (desired_twist_vec - jacobian * current_joints_speed)
+              KD * (desired_twist_vec - jacobian * current_joints_speed)
               // - panda.computeHessianTimesQDot(current_joints_config_vec,
               //                                     current_joints_speed,
               //                                     frame_id_name)
@@ -643,47 +725,96 @@ void ImpedanceController::control() {
           );
     } else {
 
-      y = jacobian_pinv * (1 / Md) *
+      y = jacobian_pinv * MD_1 *
           (
 
-              Md * desired_accel_vec +
-              Kd * (desired_twist_vec - jacobian * current_joints_speed) +
-              Kp * error_pose_vec -
-              Md * panda.computeHessianTimesQDot(current_joints_config_vec,
+              MD * desired_accel_vec + KD * error_twist + KP * error_pose_vec -
+              MD * panda.computeHessianTimesQDot(current_joints_config_vec,
                                                  current_joints_speed,
                                                  frame_id_name)
 
           );
     }
 
-    control_input =
-        panda.getMassMatrix(current_joints_config_vec) * y + non_linear_effects;
+    // RCLCPP_INFO(this->get_logger(), "Calculating control input");
+    control_input = mass_matrix * y + non_linear_effects - gravity;
 
     // Clamping control input
     //
     if (clamp) {
-      clamp_control_speed(control_input,
-                          (control_loop_rate->period().count() * 1e-9));
+      // clamp_control_speed(control_input,
+      //                     (control_loop_rate->period().count() * 1e-9));
       clamp_control(control_input);
     }
 
     // Apply control
     //
-    RCLCPP_DEBUG_STREAM(this->get_logger(), control_input);
-    publish_efforts(control_input);
+    publish_efforts(control_input + gravity);
 
     // Save last control input
     //
     last_control_input = control_input;
 
+    pose_debug.pose = panda.getPose(frame_id_name);
+    robot_pose_pub->publish(pose_debug);
+
+    // DEBUG
+    cmd.header.stamp = this->now();
+
+    for (int i = 0; i < control_input.size(); i++) {
+      cmd.effort_values[i] = control_input[i];
+    }
+    robot_joint_efforts_pub_debug->publish(cmd);
+
+    for (int i = 0; i < gravity.size(); i++) {
+      cmd.effort_values[i] = gravity[i];
+    }
+    gravity_contribute_debug->publish(cmd);
+
+    for (int i = 0; i < y.size(); i++) {
+      cmd.effort_values[i] = y[i];
+    }
+    y_contribute_debug->publish(cmd);
+
+    // POSE
+
+    current_pose_debug->publish(pose_debug);
+
+    pose_debug.pose = *desired_pose;
+    desired_pose_debug->publish(pose_debug);
+
+    // VELOCITY
+
+    twist_debug.twist.linear.x = current_twist[0];
+    twist_debug.twist.linear.y = current_twist[1];
+    twist_debug.twist.linear.z = current_twist[2];
+
+    twist_debug.twist.angular.x = current_twist[3];
+    twist_debug.twist.angular.y = current_twist[4];
+    twist_debug.twist.angular.z = current_twist[5];
+
+    current_velocity_debug->publish(twist_debug);
+
+    twist_debug.twist.linear.x = error_twist[0];
+    twist_debug.twist.linear.y = error_twist[1];
+    twist_debug.twist.linear.z = error_twist[2];
+
+    twist_debug.twist.angular.x = error_twist[3];
+    twist_debug.twist.angular.y = error_twist[4];
+    twist_debug.twist.angular.z = error_twist[5];
+
+    velocity_error_debug->publish(twist_debug);
+
+    twist_debug.twist = *desired_twist;
+    desired_velocity_debug->publish(twist_debug);
+
+    accel_debug.accel = *desired_accel;
+    desired_acceleration_debug->publish(accel_debug);
+
     // Print current pose to topic
-    geometry_msgs::msg::PoseStamped current_pose;
-    current_pose.pose = panda_mine.pose(current_joints_config_doubles);
-    current_pose.header.stamp = this->now();
-    robot_pose_pub->publish(current_pose);
+    // current_pose.pose = panda_mine.pose(current_joints_config_doubles);
 
     // Publish minimum singular value
-    std_msgs::msg::Float64 sigma;
     sigma.data = sigma_min;
     min_singular_val_pub->publish(sigma);
 
@@ -697,7 +828,7 @@ void ImpedanceController::control() {
     error.pose.orientation.y = error_quat.y();
     error.pose.orientation.z = error_quat.z();
     error.header.stamp = this->now();
-    pose_error->publish(error);
+    pose_error_debug->publish(error);
 
     // Debug printing
     // Lambda dynamic

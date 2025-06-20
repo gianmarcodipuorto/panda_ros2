@@ -8,13 +8,16 @@
 #include "panda_utils/robot_model.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include <Eigen/src/Core/Matrix.h>
+#include <cstdlib>
 #include <memory>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/utilities.hpp>
 #include <rclcpp/wait_for_message.hpp>
 #include <rclcpp_action/client.hpp>
 #include <rclcpp_action/create_client.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <unsupported/Eigen/CXX11/src/Tensor/TensorFFT.h>
 
 using panda_interfaces::action::CartTraj;
 using panda_interfaces::action::JointTraj;
@@ -25,8 +28,37 @@ using GoalHandleTrajMove = rclcpp_action::ClientGoalHandle<TrajMove>;
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
-
   auto node = std::make_shared<rclcpp::Node>("cart_traj_example_node");
+  geometry_msgs::msg::Pose desired_pose;
+  double total_time = 5.0;
+
+  switch (argc) {
+
+  case 1:
+    break;
+  case 2: {
+
+    RCLCPP_INFO(node->get_logger(), "Choosing time for cartesian trajectory");
+    total_time = atoi(argv[1]);
+    break;
+  }
+  case 5: {
+
+    RCLCPP_INFO(node->get_logger(), "Choosing time and desired pose (only "
+                                    "translation) for cartesian trajectory");
+    total_time = atoi(argv[1]);
+    desired_pose.position.x = atoi(argv[2]);
+    desired_pose.position.y = atoi(argv[3]);
+    desired_pose.position.z = atoi(argv[4]);
+    break;
+  }
+  default: {
+
+    RCLCPP_ERROR(node->get_logger(), "Too many arguments, shutting down");
+    rclcpp::shutdown();
+    return 0;
+  }
+  }
 
   auto joint_cmd_pub =
       node->create_publisher<panda_interfaces::msg::JointsCommand>(
@@ -34,8 +66,7 @@ int main(int argc, char **argv) {
           panda_interface_names::DEFAULT_TOPIC_QOS);
 
   auto cart_traj_action_client = rclcpp_action::create_client<CartTraj>(
-      node, panda_interface_names::cart_traj_node_name + std::string{"/"} +
-                panda_interface_names::panda_cart_move_action_name);
+      node, panda_interface_names::panda_cart_move_action_name);
 
   auto DEFAULT_URDF_PATH =
       ament_index_cpp::get_package_share_directory("panda_world") +
@@ -47,9 +78,6 @@ int main(int argc, char **argv) {
   initial_pose.position.x = 0.2;
   initial_pose.position.y = 0.2;
   initial_pose.position.z = 0.2;
-
-  geometry_msgs::msg::Pose desired_pose;
-  double total_time = 5.0;
 
   RCLCPP_INFO(node->get_logger(), "Waiting for servers...");
   cart_traj_action_client->wait_for_action_server();
@@ -96,6 +124,11 @@ int main(int argc, char **argv) {
     desired_pose = initial_pose;
     desired_pose.position.y += 0.2;
     desired_pose.position.x += 0.1;
+
+    desired_pose.orientation.w = SQRT2DIV2;
+    desired_pose.orientation.x = 0.0;
+    desired_pose.orientation.y = SQRT2DIV2;
+    desired_pose.orientation.z = 0.0;
     cart_goal.desired_pose = desired_pose;
     cart_goal.total_time = total_time;
 

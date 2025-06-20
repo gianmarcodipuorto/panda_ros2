@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <memory>
 #include <rclcpp/duration.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/node.hpp>
@@ -17,6 +18,8 @@
 #include <rclcpp/utilities.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_action/types.hpp>
+#include <realtime_tools/realtime_helpers.hpp>
+#include <realtime_tools/realtime_publisher.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <thread>
 
@@ -37,6 +40,29 @@ double qintic(double q_i, double q_f, double t, double t_f) {
   return q_i + (q_f - q_i) * q_cap;
 }
 
+double qintic_velocity(double q_i, double q_f, double t, double t_f) {
+  if (t <= 0)
+    return 0;
+  if (t >= t_f)
+    return 0;
+
+  double tau = t / t_f;
+  double q_cap =
+      30 * std::pow(tau, 4) - 60 * std::pow(tau, 3) + 30 * std::pow(tau, 2);
+  return (q_f - q_i) * q_cap / t_f;
+}
+
+double qintic_accel(double q_i, double q_f, double t, double t_f) {
+  if (t <= 0)
+    return 0;
+  if (t >= t_f)
+    return 0;
+
+  double tau = t / t_f;
+  double q_cap = 120 * std::pow(tau, 3) - 180 * std::pow(tau, 2) + 60 * tau;
+  return (q_f - q_i) * q_cap / std::pow(t_f, 2);
+}
+
 class JointTrajectory : public rclcpp::Node {
 
 public:
@@ -51,9 +77,11 @@ public:
         panda_interface_names::joint_state_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS, save_joints_state);
 
-    cmd_pos_pub = this->create_publisher<panda_interfaces::msg::JointsCommand>(
-        panda_interface_names::panda_joint_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+    cmd_pos_pub = std::make_shared<realtime_tools::RealtimePublisher<
+        panda_interfaces::msg::JointsCommand>>(
+        this->create_publisher<panda_interfaces::msg::JointsCommand>(
+            panda_interface_names::panda_joint_cmd_topic_name,
+            panda_interface_names::DEFAULT_TOPIC_QOS));
 
     auto handle_goal = [this](const rclcpp_action::GoalUUID uuid,
                               std::shared_ptr<const TrajMove::Goal> goal) {
@@ -101,7 +129,8 @@ public:
 
 private:
   rclcpp::Subscription<JointState>::SharedPtr joint_state_sub;
-  rclcpp::Publisher<panda_interfaces::msg::JointsCommand>::SharedPtr
+  realtime_tools::RealtimePublisherSharedPtr<
+      panda_interfaces::msg::JointsCommand>
       cmd_pos_pub;
   rclcpp_action::Server<TrajMove>::SharedPtr action_traj_server;
   JointState::SharedPtr joint_state;
@@ -133,9 +162,18 @@ private:
       panda_interfaces::msg::JointsCommand cmd;
 
       for (size_t i = 0; i < 7; i++) {
+
         cmd.positions[i] =
             qintic(q0.position[i], goal->desired_joint_cmd.positions[i],
                    t.seconds(), goal->total_time);
+
+        cmd.velocities[i] = qintic_velocity(
+            q0.position[i], goal->desired_joint_cmd.positions[i], t.seconds(),
+            goal->total_time);
+
+        cmd.accelerations[i] =
+            qintic_accel(q0.position[i], goal->desired_joint_cmd.positions[i],
+                         t.seconds(), goal->total_time);
       }
 
       cmd.header.stamp = this->now();
@@ -144,7 +182,7 @@ private:
 
       goal_handle->publish_feedback(feedback);
 
-      cmd_pos_pub->publish(cmd);
+      cmd_pos_pub->tryPublish(cmd);
 
       loop_rate.sleep();
     }
@@ -164,6 +202,17 @@ int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
 
   auto node = std::make_shared<JointTrajectory>();
+
+  if (!realtime_tools::has_realtime_kernel()) {
+    RCLCPP_ERROR(node->get_logger(), "No real time kernel");
+  }
+  if (!realtime_tools::configure_sched_fifo(98)) {
+    RCLCPP_ERROR(node->get_logger(),
+                 "Couldn't configure real time priority for current node");
+  } else {
+    RCLCPP_INFO(node->get_logger(), "Set real time priority");
+  }
+  RCLCPP_INFO(node->get_logger(), "Node spinned");
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
