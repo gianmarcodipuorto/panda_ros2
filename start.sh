@@ -35,17 +35,17 @@ case "$number" in
     ;;
 esac
 
-read -p "Activate CLIK? (y/n): " answer
-case "$answer" in
-  [Yy]* )
-    echo "Activating CLIK";
-    ros2 lifecycle set /clik_cmd_pub configure;
-    echo "Configured";
-    sleep 1
-    ros2 lifecycle set /clik_cmd_pub activate;
-    echo "Activated";;
-  [Nn]* )
-    exit 1;;
-  * )
-    echo "Invalid input. Please answer y or n."; exit 1;;
-esac
+# read -p "Activate CLIK? (y/n): " answer
+# case "$answer" in
+#   [Yy]* )
+#     echo "Activating CLIK";
+#     ros2 lifecycle set /clik_cmd_pub configure;
+#     echo "Configured";
+#     sleep 1
+#     ros2 lifecycle set /clik_cmd_pub activate;
+#     echo "Activated";;
+#   [Nn]* )
+#     exit 1;;
+#   * )
+#     echo "Invalid input. Please answer y or n."; exit 1;;
+# esac

@@ -36,6 +36,16 @@ def generate_launch_description():
         default_value='0.01',
         description='Lambda value for damped least square jacobian pseudo-inverse'
     )
+    k_max = DeclareLaunchArgument(
+        'k_max',
+        default_value='2.0',
+        description='Max value for quadratic based lambda handling'
+    )
+    eps = DeclareLaunchArgument(
+        'eps',
+        default_value='0.1',
+        description='Minimum value for quadratic based lambda handling'
+    )
 
     control_rate = DeclareLaunchArgument(
         'controller_rate',
@@ -89,6 +99,12 @@ def generate_launch_description():
         'alpha',
         default_value='30.0',
         description='Paramater used for computations of DLS jacobian based on sigma min'
+    )
+
+    task_gain = DeclareLaunchArgument(
+        'task_gain',
+        default_value='1.0',
+        description='Secondary task gain'
     )
 
     pos_cmds_joints = Node(
@@ -174,6 +190,10 @@ def generate_launch_description():
             'Kd': LaunchConfiguration('controller_kd'),
             'Md': LaunchConfiguration('controller_md'),
             'lambda': LaunchConfiguration('lambda'),
+            'k_max': LaunchConfiguration('k_max'),
+            'eps': LaunchConfiguration('eps'),
+            'task_gain': LaunchConfiguration('task_gain'),
+            'alpha': LaunchConfiguration('alpha'),
             'control_freq': LaunchConfiguration('controller_rate'),
             'clamp': LaunchConfiguration('clamp_effort_control'),
             'use_robot': LaunchConfiguration('use_robot'),
@@ -195,6 +215,8 @@ def generate_launch_description():
         controller_kd,
         controller_md,
         lambda_pinv,
+        eps,
+        k_max,
         control_rate,
         loop_rate_freq,
         clamp_effort_control,
@@ -204,6 +226,7 @@ def generate_launch_description():
         clik_ts,
         clik_gamma,
         alpha,
+        task_gain,
         effort_cmd_server,
         joint_traj_server,
         cart_traj_server,

@@ -1,6 +1,7 @@
 geometry_msgs/Pose desired_pose
 geometry_msgs/Pose initial_pose
 float64 total_time
+bool only_position false
 ---
 bool completed
 ---

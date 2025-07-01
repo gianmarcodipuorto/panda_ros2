@@ -1,0 +1,590 @@
+<sdf version='1.11'>
+  <model name='fr3'>
+    <joint name='world_joint' type='fixed'>
+      <pose relative_to='__model__'>0 0 0.75 0 0 0</pose>
+      <parent>world</parent>
+      <child>fr3_link0</child>
+    </joint>
+    <link name='fr3_link0'>
+      <pose relative_to='world_joint'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>-0.0172 0.00040000000000000002 0.074499999999999997 0 0 0</pose>
+        <mass>2.3965999999999998</mass>
+        <inertia>
+          <ixx>0.0089999999999999993</ixx>
+          <ixy>0</ixy>
+          <ixz>0.002</ixz>
+          <iyy>0.0115</iyy>
+          <iyz>0</iyz>
+          <izz>0.0085000000000000006</izz>
+        </inertia>
+      </inertial>
+      <collision name='fr3_link0_collision_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/collision/link0.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name='fr3_link0_visual_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/visual/link0.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <joint name='fr3_joint1' type='revolute'>
+      <pose relative_to='fr3_link0'>0 0 0.33300000000000002 0 0 0</pose>
+      <parent>fr3_link0</parent>
+      <child>fr3_link1</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-2.8973</lower>
+          <upper>2.8973</upper>
+          <effort>87</effort>
+          <velocity>2.1749999999999998</velocity>
+        </limit>
+        <dynamics>
+          <damping>0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+      <physics>
+        <ode>
+          <limit>
+            <cfm>0</cfm>
+            <erp>0.20000000000000001</erp>
+          </limit>
+        </ode>
+      </physics>
+      <sensor name='torque_sensor1' type='force_torque'>
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint1/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </joint>
+    <link name='fr3_link1'>
+      <pose relative_to='fr3_joint1'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>4.1279999999999999e-07 -0.018125132400000001 -0.038603597000000003 0 0 0</pose>
+        <mass>2.9274653453999999</mass>
+        <inertia>
+          <ixx>0.023927316485107909</ixx>
+          <ixy>1.331790345571408e-05</ixy>
+          <ixz>-0.0001140477491861668</ixz>
+          <iyy>0.022482161327575599</iyy>
+          <iyz>-0.0019950320628240111</iyz>
+          <izz>0.0063500982585300162</izz>
+        </inertia>
+      </inertial>
+      <collision name='fr3_link1_collision_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/collision/link1.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name='fr3_link1_visual_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/visual/link1.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <joint name='fr3_joint2' type='revolute'>
+      <pose relative_to='fr3_link1'>0 0 0 -1.570796326794897 0 0</pose>
+      <parent>fr3_link1</parent>
+      <child>fr3_link2</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1.7627999999999999</lower>
+          <upper>1.7627999999999999</upper>
+          <effort>87</effort>
+          <velocity>2.1749999999999998</velocity>
+        </limit>
+        <dynamics>
+          <damping>0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+      <physics>
+        <ode>
+          <limit>
+            <cfm>0</cfm>
+            <erp>0.20000000000000001</erp>
+          </limit>
+        </ode>
+      </physics>
+      <sensor name='torque_sensor2' type='force_torque'>
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint2/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </joint>
+    <link name='fr3_link2'>
+      <pose relative_to='fr3_joint2'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0.0031828863999999999 -0.074322164400000001 0.0088146084 0 0 0</pose>
+        <mass>2.9355370338000002</mass>
+        <inertia>
+          <ixx>0.041938946257609418</ixx>
+          <ixy>0.00020257331521090631</ixy>
+          <ixz>0.0040777842271799243</ixz>
+          <iyy>0.02514514885014724</iyy>
+          <iyz>-0.0042252158006570164</iyz>
+          <izz>0.061702144728888388</izz>
+        </inertia>
+      </inertial>
+      <collision name='fr3_link2_collision_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/collision/link2.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name='fr3_link2_visual_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/visual/link2.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <joint name='fr3_joint3' type='revolute'>
+      <pose relative_to='fr3_link2'>0 -0.316 0 1.570796326794897 0 0</pose>
+      <parent>fr3_link2</parent>
+      <child>fr3_link3</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-2.8973</lower>
+          <upper>2.8973</upper>
+          <effort>87</effort>
+          <velocity>2.1749999999999998</velocity>
+        </limit>
+        <dynamics>
+          <damping>0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+      <physics>
+        <ode>
+          <limit>
+            <cfm>0</cfm>
+            <erp>0.20000000000000001</erp>
+          </limit>
+        </ode>
+      </physics>
+      <sensor name='torque_sensor3' type='force_torque'>
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint3/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </joint>
+    <link name='fr3_link3'>
+      <pose relative_to='fr3_joint3'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0.040701568600000002 -0.0048200565000000003 -0.028973082300000001 0 0 0</pose>
+        <mass>2.2449013699</mass>
+        <inertia>
+          <ixx>0.024101425472408851</ixx>
+          <ixy>0.0024046945590421088</ixy>
+          <ixz>-0.0028562692701143131</ixz>
+          <iyy>0.01974053266708178</iyy>
+          <iyz>-0.002104212683891874</iyz>
+          <izz>0.019044494482244819</izz>
+        </inertia>
+      </inertial>
+      <collision name='fr3_link3_collision_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/collision/link3.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name='fr3_link3_visual_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/visual/link3.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <joint name='fr3_joint4' type='revolute'>
+      <pose relative_to='fr3_link3'>0.082500000000000004 0 0 1.570796326794897 0 0</pose>
+      <parent>fr3_link3</parent>
+      <child>fr3_link4</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-3.0718000000000001</lower>
+          <upper>-0.069800000000000001</upper>
+          <effort>87</effort>
+          <velocity>2.1749999999999998</velocity>
+        </limit>
+        <dynamics>
+          <damping>0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+      <physics>
+        <ode>
+          <limit>
+            <cfm>0</cfm>
+            <erp>0.20000000000000001</erp>
+          </limit>
+        </ode>
+      </physics>
+      <sensor name='torque_sensor4' type='force_torque'>
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint4/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </joint>
+    <link name='fr3_link4'>
+      <pose relative_to='fr3_joint4'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>-0.045910096499999997 0.063049296000000005 -0.0085187868000000007 0 0 0</pose>
+        <mass>2.6155955790999998</mass>
+        <inertia>
+          <ixx>0.034529983219132018</ixx>
+          <ixy>0.01322552265982813</ixy>
+          <ixz>0.010151429984841131</ixz>
+          <iyy>0.028881621933049061</iyy>
+          <iyz>-0.00097628338707045521</iyz>
+          <izz>0.041254711711466413</izz>
+        </inertia>
+      </inertial>
+      <collision name='fr3_link4_collision_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/collision/link4.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name='fr3_link4_visual_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/visual/link4.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <joint name='fr3_joint5' type='revolute'>
+      <pose relative_to='fr3_link4'>-0.082500000000000004 0.38400000000000001 0 -1.570796326794897 0 0</pose>
+      <parent>fr3_link4</parent>
+      <child>fr3_link5</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-2.8973</lower>
+          <upper>2.8973</upper>
+          <effort>12</effort>
+          <velocity>2.6099999999999999</velocity>
+        </limit>
+        <dynamics>
+          <damping>0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+      <physics>
+        <ode>
+          <limit>
+            <cfm>0</cfm>
+            <erp>0.20000000000000001</erp>
+          </limit>
+        </ode>
+      </physics>
+      <sensor name='torque_sensor5' type='force_torque'>
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint5/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </joint>
+    <link name='fr3_link5'>
+      <pose relative_to='fr3_joint5'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>-0.0016039604999999999 0.029253626200000001 -0.097296598999999998 0 0 0</pose>
+        <mass>2.3271207594000001</mass>
+        <inertia>
+          <ixx>0.051610278463662902</ixx>
+          <ixy>-0.0057151733877834716</ixy>
+          <ixz>-0.0035673167625872131</ixz>
+          <iyy>0.047877297133714809</iyy>
+          <iyz>0.01067398510853599</iyz>
+          <izz>0.01642362557935725</izz>
+        </inertia>
+      </inertial>
+      <collision name='fr3_link5_collision_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/collision/link5.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name='fr3_link5_visual_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/visual/link5.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <joint name='fr3_joint6' type='revolute'>
+      <pose relative_to='fr3_link5'>0 0 0 1.570796326794897 0 0</pose>
+      <parent>fr3_link5</parent>
+      <child>fr3_link6</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-0.017500000000000002</lower>
+          <upper>3.7524999999999999</upper>
+          <effort>12</effort>
+          <velocity>2.6099999999999999</velocity>
+        </limit>
+        <dynamics>
+          <damping>0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+      <physics>
+        <ode>
+          <limit>
+            <cfm>0</cfm>
+            <erp>0.20000000000000001</erp>
+          </limit>
+        </ode>
+      </physics>
+      <sensor name='torque_sensor6' type='force_torque'>
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint6/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </joint>
+    <link name='fr3_link6'>
+      <pose relative_to='fr3_joint6'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0.059713122100000002 -0.041029466600000002 -0.010169272599999999 0 0 0</pose>
+        <mass>1.8170376524</mass>
+        <inertia>
+          <ixx>0.005412333594383447</ixx>
+          <ixy>0.0061934563602858341</ixy>
+          <ixz>0.001421928930611765</ixz>
+          <iyy>0.014058329545509981</iyy>
+          <iyz>-0.0013140753741120029</iyz>
+          <izz>0.016080817924212551</izz>
+        </inertia>
+      </inertial>
+      <collision name='fr3_link6_collision_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/collision/link6.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name='fr3_link6_visual_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/visual/link6.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <joint name='fr3_joint7' type='revolute'>
+      <pose relative_to='fr3_link6'>0.087999999999999995 0 0 1.570796326794897 0 0</pose>
+      <parent>fr3_link6</parent>
+      <child>fr3_link7</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-2.8973</lower>
+          <upper>2.8973</upper>
+          <effort>12</effort>
+          <velocity>2.6099999999999999</velocity>
+        </limit>
+        <dynamics>
+          <damping>0</damping>
+          <friction>0</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+      <physics>
+        <ode>
+          <limit>
+            <cfm>0</cfm>
+            <erp>0.20000000000000001</erp>
+          </limit>
+        </ode>
+      </physics>
+      <sensor name='torque_sensor7' type='force_torque'>
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>1000</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>fr3_joint7/force_torque_sensor</topic>
+        <force_torque>
+          <frame>child</frame>
+          <measure_direction>parent_to_child</measure_direction>
+        </force_torque>
+      </sensor>
+    </joint>
+    <link name='fr3_link7'>
+      <pose relative_to='fr3_joint7'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0.0045225817000000001 0.0086261920999999991 -0.016163325100000001 0 0 0</pose>
+        <mass>0.62714328620000004</mass>
+        <inertia>
+          <ixx>0.00021092389150104721</ixx>
+          <ixy>-2.433299114461931e-05</ixy>
+          <ixz>4.5644803937789833e-05</ixz>
+          <iyy>0.00017718568002411469</iyy>
+          <iyz>8.7440702232264379e-05</iyz>
+          <izz>5.9931905996599709e-05</izz>
+        </inertia>
+      </inertial>
+      <collision name='fr3_link7_collision_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/collision/link7.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name='fr3_link7_visual_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>../../meshes/robot_arms/fr3/visual/link7.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <plugin name='gz::sim::systems::JointStatePublisher' filename='gz-sim-joint-state-publisher-system'>
+      <joint_name>fr3_joint1</joint_name>
+      <joint_name>fr3_joint2</joint_name>
+      <joint_name>fr3_joint3</joint_name>
+      <joint_name>fr3_joint4</joint_name>
+      <joint_name>fr3_joint5</joint_name>
+      <joint_name>fr3_joint6</joint_name>
+      <joint_name>fr3_joint7</joint_name>
+    </plugin>
+    <plugin name='gz::sim::systems::JointController' filename='gz-sim-joint-controller-system'>
+      <joint_name>fr3_joint1</joint_name>
+      <topic>/model/panda/joint/fr3_joint1/cmd_force</topic>
+      <use_force_commands>true</use_force_commands>
+    </plugin>
+    <plugin name='gz::sim::systems::JointController' filename='gz-sim-joint-controller-system'>
+      <joint_name>fr3_joint2</joint_name>
+      <topic>/model/panda/joint/fr3_joint2/cmd_force</topic>
+      <use_force_commands>true</use_force_commands>
+    </plugin>
+    <plugin name='gz::sim::systems::JointController' filename='gz-sim-joint-controller-system'>
+      <joint_name>fr3_joint3</joint_name>
+      <topic>/model/panda/joint/fr3_joint3/cmd_force</topic>
+      <use_force_commands>true</use_force_commands>
+    </plugin>
+    <plugin name='gz::sim::systems::JointController' filename='gz-sim-joint-controller-system'>
+      <joint_name>fr3_joint4</joint_name>
+      <topic>/model/panda/joint/fr3_joint4/cmd_force</topic>
+      <use_force_commands>true</use_force_commands>
+    </plugin>
+    <plugin name='gz::sim::systems::JointController' filename='gz-sim-joint-controller-system'>
+      <joint_name>fr3_joint5</joint_name>
+      <topic>/model/panda/joint/fr3_joint5/cmd_force</topic>
+      <use_force_commands>true</use_force_commands>
+    </plugin>
+    <plugin name='gz::sim::systems::JointController' filename='gz-sim-joint-controller-system'>
+      <joint_name>fr3_joint6</joint_name>
+      <topic>/model/panda/joint/fr3_joint6/cmd_force</topic>
+      <use_force_commands>true</use_force_commands>
+    </plugin>
+    <plugin name='gz::sim::systems::JointController' filename='gz-sim-joint-controller-system'>
+      <joint_name>fr3_joint7</joint_name>
+      <topic>/model/panda/joint/fr3_joint7/cmd_force</topic>
+      <use_force_commands>true</use_force_commands>
+    </plugin>
+  </model>
+</sdf>

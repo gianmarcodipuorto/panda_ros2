@@ -734,7 +734,7 @@ private:
   Eigen::Vector<double, 7> velocity_limits{};
   Eigen::Vector<double, 7> acceleration_limits{};
 
-  const std::string frame_id_name{"fr3_link8"};
+  const std::string frame_id_name{"fr3_link7"};
 
   pinocchio::SE3 T_0_b{};
 
@@ -974,7 +974,7 @@ void InverseDynamicsController::control() {
     //
     RCLCPP_DEBUG_STREAM(this->get_logger(), control_input);
     // Re-sum the gravitational effort contribute
-    // publish_efforts(control_input + gravity);
+    publish_efforts(control_input + gravity);
     // RCLCPP_INFO_STREAM(this->get_logger(),
     //                    "Seconds from last control published: "
     //                        << (this->now() - last_control_cycle).seconds());

@@ -27,6 +27,7 @@
 #include <Eigen/src/Core/DiagonalMatrix.h>
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Core/util/IndexedViewHelper.h>
+#include <Eigen/src/Geometry/AngleAxis.h>
 #include <Eigen/src/Geometry/Quaternion.h>
 #include <Eigen/src/Geometry/Transform.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -87,6 +88,18 @@ enum class Mode {
   franka
 };
 
+/// The quaternion represents a rotation
+Eigen::Matrix<double, 3, 3> s_operator(const Eigen::Quaterniond &quat) {
+  Eigen::Matrix<double, 3, 3> mat = Eigen::Matrix<double, 3, 3>::Zero();
+  mat(0, 1) = -quat.z();
+  mat(0, 2) = quat.y();
+  mat(1, 0) = quat.z();
+  mat(1, 2) = -quat.x();
+  mat(2, 0) = quat.y();
+  mat(2, 1) = quat.x();
+  return mat;
+}
+
 geometry_msgs::msg::Pose
 convertMatrixToPose(const std::array<double, 16> &tf_matrix) {
   // Step 1: Map the array to an Eigen 4x4 matrix (column-major)
@@ -132,6 +145,9 @@ public:
     this->declare_parameter<double>("Md", 1.0);
     this->declare_parameter<double>("alpha", 30.0);
     this->declare_parameter<double>("lambda", 1e-2);
+    this->declare_parameter<double>("k_max", 2.0);
+    this->declare_parameter<double>("eps", 0.1);
+    this->declare_parameter<double>("task_gain", 1.0);
     this->declare_parameter<double>("control_freq", 1000.0);
     this->declare_parameter<bool>("clamp", true);
     this->declare_parameter<std::string>("robot_ip", "192.168.1.0");
@@ -286,13 +302,23 @@ public:
     y_contribute_debug = this->create_publisher<JointsEffort>(
         "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS);
 
-    yoshikawa_index_debug =
-        this->create_publisher<panda_interfaces::msg::DoubleStamped>(
-            "debug/yoshikawa_index", panda_interface_names::DEFAULT_TOPIC_QOS);
-
-    yoshikawa_index_grad_debug =
+    y_cartesian_contribute_debug =
         this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-            "debug/yoshikawa_index_grad",
+            "debug/cmd/y_cartesian_contribute",
+            panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    lamda_dls_debug =
+        this->create_publisher<panda_interfaces::msg::DoubleStamped>(
+            "debug/lambda", panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    manipulability_index_debug =
+        this->create_publisher<panda_interfaces::msg::DoubleStamped>(
+            "debug/manipulability_index",
+            panda_interface_names::DEFAULT_TOPIC_QOS);
+
+    manipulability_index_grad_debug =
+        this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
+            "debug/manipulability_index_grad",
             panda_interface_names::DEFAULT_TOPIC_QOS);
 
     joint_limits_index_debug =
@@ -461,7 +487,7 @@ public:
         Eigen::Matrix<double, 7, 6> jacobian_pinv =
             jacobian.transpose() *
             (jacobian * jacobian.transpose() +
-             lambda * Eigen::Matrix<double, 6, 6>::Identity())
+             lambda * lambda * Eigen::Matrix<double, 6, 6>::Identity())
                 .inverse();
 
         Eigen::Matrix<double, 6, 6> B_a =
@@ -637,14 +663,14 @@ public:
                       franka::Frame::kEndEffector, print_debug.robot_state));
                   double_stamped.data = manip_index(jacobian);
 
-                  yoshikawa_index_debug->publish(double_stamped);
+                  manipulability_index_debug->publish(double_stamped);
 
                   Eigen::Vector<double, 7> manip_ind_gradient =
                       manip_grad(current_joints_config_vec);
                   for (int i = 0; i < 7; i++) {
                     arr_stamped.data[i] = manip_ind_gradient[i];
                   }
-                  yoshikawa_index_grad_debug->publish(arr_stamped);
+                  manipulability_index_grad_debug->publish(arr_stamped);
 
                   for (int i = 0; i < 7; i++) {
                     cmd.effort_values[i] = print_debug.tau_d_last[i];
@@ -732,16 +758,6 @@ public:
       break;
     }
 
-    // Get current pose in simulation environment
-    Eigen::VectorXd current_joints_config_vec;
-    current_joints_config_vec.resize(current_joint_config->position.size());
-    for (size_t i = 0; i < current_joint_config->position.size(); i++) {
-      current_joints_config_vec[i] = current_joint_config->position[i];
-    }
-    panda.computeAll(current_joints_config_vec,
-                     Eigen::Vector<double, 7>::Zero());
-    desired_pose = std::make_shared<Pose>(panda.getPose(frame_id_name));
-
     // Start control loop thread
     start_flag.store(true);
     control_thread =
@@ -799,17 +815,20 @@ private:
   Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub_debug{};
   Publisher<JointsEffort>::SharedPtr gravity_contribute_debug{};
   Publisher<JointsEffort>::SharedPtr y_contribute_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      y_cartesian_contribute_debug{};
   Publisher<TwistStamped>::SharedPtr velocity_error_debug{};
   Publisher<PoseStamped>::SharedPtr desired_pose_debug{};
   Publisher<TwistStamped>::SharedPtr desired_velocity_debug{};
   Publisher<AccelStamped>::SharedPtr desired_acceleration_debug{};
   Publisher<PoseStamped>::SharedPtr current_pose_debug{};
   Publisher<TwistStamped>::SharedPtr current_velocity_debug{};
+  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr lamda_dls_debug{};
 
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      yoshikawa_index_grad_debug{};
+      manipulability_index_grad_debug{};
   Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr
-      yoshikawa_index_debug{};
+      manipulability_index_debug{};
 
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       joint_limits_index_grad_debug{};
@@ -852,7 +871,7 @@ private:
   Eigen::VectorXd velocity_limits{};
   Eigen::VectorXd acceleration_limits{};
 
-  const std::string frame_id_name{"fr3_link8"};
+  const std::string frame_id_name{"fr3_link7"};
 
   // Control loop related variables
   rclcpp::Rate::SharedPtr control_loop_rate;
@@ -891,12 +910,16 @@ private:
   joint_limit_index(const Eigen::Vector<double, 7> &current_joint_config) {
     double index = 0;
     for (int i = 0; i < 7; i++) {
-      index = index + std::pow((current_joint_config[i] - joint_max_limits[i] -
-                                joint_min_limits[i]) /
-                                   (joint_max_limits[i] - joint_min_limits[i]),
-                               2);
+      // index = index + std::pow((current_joint_config[i] - joint_max_limits[i]
+      // -
+      //                           joint_min_limits[i]) /
+      //                              (joint_max_limits[i] -
+      //                              joint_min_limits[i]),
+      //                          2);
+      index = index + 1 / (current_joint_config[i] - joint_min_limits[i]) +
+              1 / (joint_max_limits[i] - current_joint_config[i]);
     }
-    return -index / (7 * 2);
+    return index;
   }
 
   Eigen::Vector<double, 7>
@@ -1082,6 +1105,7 @@ void ImpedanceController::control() {
   Eigen::Vector<double, 7> control_input;
   Eigen::VectorXd gravity;
   Eigen::Vector<double, 7> y;
+  Eigen::Vector<double, 6> y_cartesian;
   Eigen::Matrix<double, 7, 6> jacobian_pinv;
   Eigen::Vector<double, 7> current_joints_config_vec;
   Eigen::Vector<double, 7> current_joints_speed;
@@ -1093,8 +1117,26 @@ void ImpedanceController::control() {
   std_msgs::msg::Float64 sigma;
   JointsEffort cmd;
   panda_interfaces::msg::DoubleArrayStamped arr_stamped;
+  panda_interfaces::msg::DoubleArrayStamped y_cartesian_stamped;
+  y_cartesian_stamped.data.resize(6);
   arr_stamped.data.resize(7);
   panda_interfaces::msg::DoubleStamped double_stamped;
+
+  RCLCPP_INFO(this->get_logger(), "Waiting for simulation to start");
+  rclcpp::Time last_control_cycle = this->now();
+  while (rclcpp::Time{current_joint_config->header.stamp} - this->now() ==
+         rclcpp::Duration{0, 0}) {
+  }
+
+  // Get current pose in simulation environment
+  current_joint_config = nullptr;
+  while (!current_joint_config) {
+  }
+  for (size_t i = 0; i < current_joint_config->position.size(); i++) {
+    current_joints_config_vec[i] = current_joint_config->position[i];
+  }
+  panda.computeAll(current_joints_config_vec, Eigen::Vector<double, 7>::Zero());
+  desired_pose = std::make_shared<Pose>(panda.getPose(frame_id_name));
 
   RCLCPP_INFO_STREAM(
       this->get_logger(),
@@ -1107,12 +1149,19 @@ void ImpedanceController::control() {
 
   // Coefficient for dynamic lambda damping
   double alpha = this->get_parameter("alpha").as_double();
+  double k_max = this->get_parameter("k_max").as_double();
+  double eps = this->get_parameter("eps").as_double();
 
-  Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp, Kp, Kp};
+  double task_gain = this->get_parameter("task_gain").as_double();
+
+  double orient_scale = 5;
+  Eigen::Vector<double, 6> KP_{
+      Kp, Kp, Kp, Kp * orient_scale, Kp * orient_scale, Kp * orient_scale};
   Eigen::Matrix<double, 6, 6> KP = Eigen::Matrix<double, 6, 6>::Identity();
   KP.diagonal() = KP_;
 
-  Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd, Kd, Kd};
+  Eigen::Vector<double, 6> KD_{
+      Kd, Kd, Kd, Kd * orient_scale, Kd * orient_scale, Kd * orient_scale};
   Eigen::Matrix<double, 6, 6> KD = Eigen::Matrix<double, 6, 6>::Identity();
   KD.diagonal() = KD_;
 
@@ -1120,6 +1169,11 @@ void ImpedanceController::control() {
   Eigen::Matrix<double, 6, 6> MD = Eigen::Matrix<double, 6, 6>::Identity();
   MD.diagonal() = MD_;
   auto MD_1 = MD.inverse();
+
+  RCLCPP_INFO_STREAM(this->get_logger(), "MD matrix and inverse: " << std::endl
+                                                                   << MD
+                                                                   << std::endl
+                                                                   << MD_1);
 
   while (start_flag.load() && rclcpp::ok()) {
 
@@ -1129,6 +1183,7 @@ void ImpedanceController::control() {
     accel_debug.header.stamp = this->now();
     arr_stamped.header.stamp = this->now();
     double_stamped.header.stamp = this->now();
+    y_cartesian_stamped.header.stamp = this->now();
 
     {
 
@@ -1155,29 +1210,47 @@ void ImpedanceController::control() {
     current_quat = quaternionContinuity(current_quat, old_quaternion);
     old_quaternion = current_quat;
 
-    // Get desired pose
-    Eigen::Quaterniond desired_quat{};
-    desired_quat.w() = desired_pose->orientation.w;
-    desired_quat.x() = desired_pose->orientation.x;
-    desired_quat.y() = desired_pose->orientation.y;
-    desired_quat.z() = desired_pose->orientation.z;
-    desired_quat.normalize();
-
     // Calculate pose error
     Eigen::Quaterniond error_quat{};
+    Eigen::Quaterniond quat_des_dot{};
+    Eigen::Quaterniond current_quat_dot{};
     Eigen::Vector<double, 6> error_pose_vec{};
     {
       std::lock_guard<std::mutex> lock(desired_pose_mutex);
+
+      // Get desired pose
+      Eigen::Quaterniond desired_quat{};
+      desired_quat.w() = desired_pose->orientation.w;
+      desired_quat.x() = desired_pose->orientation.x;
+      desired_quat.y() = desired_pose->orientation.y;
+      desired_quat.z() = desired_pose->orientation.z;
+      desired_quat.normalize();
+
+      // Calculate quaternion_des_dot
+      // double eta =
+      //     -1 / 2 * desired_quat.vec().transpose() *
+      //     desired_twist_vec.tail(3);
+      // auto epsilon =
+      //     1 / 2 *
+      //     (desired_quat.w() * Eigen::Matrix<double, 3, 3>::Identity() -
+      //      s_operator(desired_quat)) *
+      //     desired_twist_vec.tail(3);
+      // quat_des_dot.w() = eta;
+      // quat_des_dot.vec() = epsilon;
+
       error_quat = desired_quat * current_quat.inverse();
+      Eigen::AngleAxisd err_angle_axis{error_quat};
+
       error_pose_vec(0) =
           desired_pose->position.x - current_pose_tmp.position.x;
       error_pose_vec(1) =
           desired_pose->position.y - current_pose_tmp.position.y;
       error_pose_vec(2) =
           desired_pose->position.z - current_pose_tmp.position.z;
-      error_pose_vec(3) = error_quat.x();
-      error_pose_vec(4) = error_quat.y();
-      error_pose_vec(5) = error_quat.z();
+      error_pose_vec.tail(3) = err_angle_axis.axis() * err_angle_axis.angle();
+      // error_pose_vec(3) = error_quat.x();
+      // error_pose_vec(4) = error_quat.y();
+      // error_pose_vec(5) = error_quat.z();
     }
 
     // Update robot model
@@ -1201,10 +1274,18 @@ void ImpedanceController::control() {
     auto mass_matrix = panda.getMassMatrix(current_joints_config_vec);
 
     // DYNAMIC LAMBDA BASED ON MINIMUM SINGULAR VALUE
-    double lambda = std::exp(-alpha * sigma_min);
+    //
+    // Exponential
+    // double lambda = std::exp(-alpha * sigma_min);
+    // lambda = (lambda < 1e-4 ? 0.0 : lambda);
+
+    // Quadratic
+    double lambda = k_max * (1 - pow(sigma_min, 2) / pow(eps, 2));
+    lambda = (sigma_min >= eps ? 0.0 : lambda);
+
     jacobian_pinv = jacobian.transpose() *
                     (jacobian * jacobian.transpose() +
-                     lambda * Eigen::Matrix<double, 6, 6>::Identity())
+                     lambda * lambda * Eigen::Matrix<double, 6, 6>::Identity())
                         .inverse();
 
     Eigen::Matrix<double, 6, 6> B_a =
@@ -1223,11 +1304,31 @@ void ImpedanceController::control() {
       std::lock_guard<std::mutex> lock(desired_twist_mutex);
       current_twist = jacobian * current_joints_speed;
       error_twist = desired_twist_vec - current_twist;
+
+      // // Calculate quaternion_dot
+      // double eta =
+      //     -1 / 2 * current_quat.vec().transpose() * current_twist.tail(3);
+      // auto epsilon =
+      //     1 / 2 *
+      //     (current_quat.w() * Eigen::Matrix<double, 3, 3>::Identity() -
+      //      s_operator(current_quat)) *
+      //     current_twist.tail(3);
+      //
+      // current_quat_dot.w() = eta;
+      // current_quat_dot.vec() = epsilon;
+      //
+      // Eigen::Quaterniond error_quat_dot{quat_des_dot *
+      //                                   current_quat_dot.inverse()};
+      // error_twist(0) = desired_twist_vec(0) - current_twist(0);
+      // error_twist(1) = desired_twist_vec(1) - current_twist(1);
+      // error_twist(2) = desired_twist_vec(2) - current_twist(2);
+      // error_twist.tail(3) = error_quat_dot.vec();
     }
 
     {
       std::lock_guard<std::mutex> lock(desired_accel_mutex);
       if (compliance_mode.load()) {
+
         y = jacobian_pinv * MD_1 *
             (
 
@@ -1238,34 +1339,32 @@ void ImpedanceController::control() {
 
             );
       } else {
-
-        y = jacobian_pinv * MD_1 *
-            (
-
-                MD * desired_accel_vec + KD * error_twist +
-                KP * error_pose_vec -
-                MD * panda.computeHessianTimesQDot(current_joints_config_vec,
-                                                   current_joints_speed,
-                                                   frame_id_name)
-
+        y_cartesian =
+            MD_1 *
+            (MD * desired_accel_vec + KD * error_twist + KP * error_pose_vec
+             // -
+             //    MD * panda.computeHessianTimesQDot(current_joints_config_vec,
+             //                                       current_joints_speed,
+             //                                       frame_id_name)
             );
+
+        y = jacobian_pinv * y_cartesian;
       }
     }
 
-    // NULL SPACE EFFORT
+    control_input = mass_matrix * y + non_linear_effects - gravity;
+
     // control_input =
     //     mass_matrix * y + non_linear_effects - gravity +
-    //     tau_projector * 0.5 *
-    //     joint_limit_index_grad(current_joints_config_vec);
+    //     task_gain * tau_projector * (manip_grad(current_joints_config_vec));
 
-    // NO NULL SPACE EFFORT
-    control_input = mass_matrix * y + non_linear_effects - gravity;
+    // control_input = mass_matrix * y + non_linear_effects - gravity +
+    //                 task_gain * tau_projector *
+    //                     (-joint_limit_index_grad(current_joints_config_vec));
 
     // Clamping control input
     //
     if (clamp) {
-      // clamp_control_speed(control_input,
-      //                     (control_loop_rate->period().count() * 1e-9));
       clamp_control(control_input);
     }
 
@@ -1280,19 +1379,34 @@ void ImpedanceController::control() {
     pose_debug.pose = panda.getPose(frame_id_name);
     robot_pose_pub->tryPublish(pose_debug);
 
+    // double null_space_error_magnitude =
+    //     ((Eigen::Matrix<double, 6, 6>::Identity() - jacobian * jacobian_pinv)
+    //     *
+    //      error_pose_vec)
+    //         .norm();
+    // RCLCPP_INFO_STREAM(this->get_logger(),
+    //                    "Error magnitude: " << error_pose_vec.norm()
+    //                                        << ", error null space magnitude:
+    //                                        "
+    //                                        << null_space_error_magnitude);
+
     // DEBUG
     cmd.header.stamp = this->now();
 
+    // DLS LAMBDA
+    double_stamped.data = lambda;
+    lamda_dls_debug->publish(double_stamped);
+
     // YOSHIKAWA INDEX
     double_stamped.data = manip_index(jacobian);
-    yoshikawa_index_debug->publish(double_stamped);
+    manipulability_index_debug->publish(double_stamped);
 
     Eigen::Vector<double, 7> manip_ind_gradient =
         manip_grad(current_joints_config_vec);
     for (int i = 0; i < 7; i++) {
       arr_stamped.data[i] = manip_ind_gradient[i];
     }
-    yoshikawa_index_grad_debug->publish(arr_stamped);
+    manipulability_index_grad_debug->publish(arr_stamped);
 
     // JOINT LIMIT INDEX
     double_stamped.data = joint_limit_index(current_joints_config_vec);
@@ -1319,6 +1433,16 @@ void ImpedanceController::control() {
       cmd.effort_values[i] = y[i];
     }
     y_contribute_debug->publish(cmd);
+
+    for (int i = 0; i < y.size(); i++) {
+      cmd.effort_values[i] = y[i];
+    }
+    y_contribute_debug->publish(cmd);
+
+    for (size_t i = 0; i < y_cartesian_stamped.data.size(); i++) {
+      y_cartesian_stamped.data[i] = y_cartesian[i];
+    }
+    y_cartesian_contribute_debug->publish(y_cartesian_stamped);
 
     // POSE
 
@@ -1349,10 +1473,22 @@ void ImpedanceController::control() {
 
     velocity_error_debug->publish(twist_debug);
 
-    twist_debug.twist = desired_twist;
+    twist_debug.twist.linear.x = desired_twist_vec[0];
+    twist_debug.twist.linear.y = desired_twist_vec[1];
+    twist_debug.twist.linear.z = desired_twist_vec[2];
+
+    twist_debug.twist.angular.x = desired_twist_vec[3];
+    twist_debug.twist.angular.y = desired_twist_vec[4];
+    twist_debug.twist.angular.z = desired_twist_vec[5];
     desired_velocity_debug->publish(twist_debug);
 
-    accel_debug.accel = desired_accel;
+    accel_debug.accel.linear.x = desired_accel_vec[0];
+    accel_debug.accel.linear.y = desired_accel_vec[1];
+    accel_debug.accel.linear.z = desired_accel_vec[2];
+
+    accel_debug.accel.angular.x = desired_accel_vec[3];
+    accel_debug.accel.angular.y = desired_accel_vec[4];
+    accel_debug.accel.angular.z = desired_accel_vec[5];
     desired_acceleration_debug->publish(accel_debug);
 
     // Print current pose to topic
@@ -1373,10 +1509,6 @@ void ImpedanceController::control() {
     error.pose.orientation.z = error_quat.z();
     error.header.stamp = this->now();
     pose_error_debug->publish(error);
-
-    // Debug printing
-    // Lambda dynamic
-    RCLCPP_INFO_STREAM(this->get_logger(), "Lambda: " << lambda);
 
     // Sleep
     //

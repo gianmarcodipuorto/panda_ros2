@@ -1,6 +1,7 @@
 #include "panda_interfaces/action/cart_traj.hpp"
 #include "geometry_msgs/msg/accel.hpp"
 #include "geometry_msgs/msg/pose.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "panda_utils/constants.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -11,6 +12,7 @@
 #include <Eigen/src/Geometry/AngleAxis.h>
 #include <Eigen/src/Geometry/Quaternion.h>
 #include <cmath>
+#include <memory>
 #include <rclcpp/duration.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/node.hpp>
@@ -18,6 +20,7 @@
 #include <rclcpp/subscription.hpp>
 #include <rclcpp/subscription_wait_set_mask.hpp>
 #include <rclcpp/utilities.hpp>
+#include <rclcpp/wait_for_message.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_action/types.hpp>
 #include <string>
@@ -159,10 +162,16 @@ private:
     RCLCPP_DEBUG(this->get_logger(), "Getting goal");
     const auto goal = goal_handle->get_goal();
 
+    auto node = std::make_shared<rclcpp::Node>("wait_pose");
+    geometry_msgs::msg::PoseStamped initial_pose;
+    rclcpp::wait_for_message<geometry_msgs::msg::PoseStamped>(
+        initial_pose, node, panda_interface_names::panda_pose_state_topic_name,
+        10s);
+
     // Initial orientation
     Eigen::Quaterniond initial_quat{
-        goal->initial_pose.orientation.w, goal->initial_pose.orientation.x,
-        goal->initial_pose.orientation.y, goal->initial_pose.orientation.z};
+        initial_pose.pose.orientation.w, initial_pose.pose.orientation.x,
+        initial_pose.pose.orientation.y, initial_pose.pose.orientation.z};
     initial_quat.normalize();
     Eigen::Matrix3d initial_rot{initial_quat};
 
@@ -182,7 +191,8 @@ private:
     rclcpp::Time t0 = this->get_clock()->now();
     rclcpp::Duration t = rclcpp::Duration(0, 0);
 
-    rclcpp::Duration traj_duration = rclcpp::Duration(goal->total_time, 0);
+    rclcpp::Duration traj_duration =
+        rclcpp::Duration::from_seconds(goal->total_time);
     geometry_msgs::msg::Pose cmd_pose;
     geometry_msgs::msg::Twist cmd_twist;
     geometry_msgs::msg::Accel cmd_accel;
@@ -196,32 +206,32 @@ private:
 
       // Calculating position
       cmd_pose.position.x =
-          qintic(goal->initial_pose.position.x, goal->desired_pose.position.x,
+          qintic(initial_pose.pose.position.x, goal->desired_pose.position.x,
                  t.seconds(), goal->total_time);
       cmd_pose.position.y =
-          qintic(goal->initial_pose.position.y, goal->desired_pose.position.y,
+          qintic(initial_pose.pose.position.y, goal->desired_pose.position.y,
                  t.seconds(), goal->total_time);
       cmd_pose.position.z =
-          qintic(goal->initial_pose.position.z, goal->desired_pose.position.z,
+          qintic(initial_pose.pose.position.z, goal->desired_pose.position.z,
                  t.seconds(), goal->total_time);
 
-      cmd_twist.linear.x = qintic_velocity(goal->initial_pose.position.x,
+      cmd_twist.linear.x = qintic_velocity(initial_pose.pose.position.x,
                                            goal->desired_pose.position.x,
                                            t.seconds(), goal->total_time);
-      cmd_twist.linear.y = qintic_velocity(goal->initial_pose.position.y,
+      cmd_twist.linear.y = qintic_velocity(initial_pose.pose.position.y,
                                            goal->desired_pose.position.y,
                                            t.seconds(), goal->total_time);
-      cmd_twist.linear.z = qintic_velocity(goal->initial_pose.position.z,
+      cmd_twist.linear.z = qintic_velocity(initial_pose.pose.position.z,
                                            goal->desired_pose.position.z,
                                            t.seconds(), goal->total_time);
 
-      cmd_accel.linear.x = qintic_accel(goal->initial_pose.position.x,
+      cmd_accel.linear.x = qintic_accel(initial_pose.pose.position.x,
                                         goal->desired_pose.position.x,
                                         t.seconds(), goal->total_time);
-      cmd_accel.linear.y = qintic_accel(goal->initial_pose.position.y,
+      cmd_accel.linear.y = qintic_accel(initial_pose.pose.position.y,
                                         goal->desired_pose.position.y,
                                         t.seconds(), goal->total_time);
-      cmd_accel.linear.z = qintic_accel(goal->initial_pose.position.z,
+      cmd_accel.linear.z = qintic_accel(initial_pose.pose.position.z,
                                         goal->desired_pose.position.z,
                                         t.seconds(), goal->total_time);
 
@@ -244,16 +254,26 @@ private:
       cmd_pose.orientation.z = current_quat.z();
 
       // Angular velocity
-      Eigen::Vector3d angular_vel = initial_rot * axis * theta_dot;
+      Eigen::Vector3d angular_vel =
+          current_quat.toRotationMatrix() * axis * theta_dot;
+      // Eigen::Vector3d angular_vel = initial_rot * axis * theta_dot;
+      // Eigen::Vector3d angular_vel = axis * theta_dot;
       cmd_twist.angular.x = angular_vel.x();
       cmd_twist.angular.y = angular_vel.y();
       cmd_twist.angular.z = angular_vel.z();
 
       // Angular acceleration
-      Eigen::Vector3d angular_accel = initial_rot * axis * theta_ddot;
+      Eigen::Vector3d angular_accel =
+          current_quat.toRotationMatrix() * axis * theta_ddot;
+      // Eigen::Vector3d angular_accel = initial_rot * axis * theta_ddot;
+      // Eigen::Vector3d angular_accel = axis * theta_ddot;
       cmd_accel.angular.x = angular_accel.x();
       cmd_accel.angular.y = angular_accel.y();
       cmd_accel.angular.z = angular_accel.z();
+
+      // cmd_accel.angular.x = 0.0;
+      // cmd_accel.angular.y = 0.0;
+      // cmd_accel.angular.z = 0.0;
 
       RCLCPP_DEBUG_ONCE(this->get_logger(), "Assigning time left");
       feedback->time_left = (traj_duration - t).seconds();
@@ -262,9 +282,12 @@ private:
       goal_handle->publish_feedback(feedback);
 
       RCLCPP_DEBUG_ONCE(this->get_logger(), "Publish command");
+
       cmd_pose_pub->tryPublish(cmd_pose);
-      cmd_twist_pub->tryPublish(cmd_twist);
-      cmd_accel_pub->tryPublish(cmd_accel);
+      if (!goal->only_position) {
+        cmd_twist_pub->tryPublish(cmd_twist);
+        cmd_accel_pub->tryPublish(cmd_accel);
+      }
 
       // Sleep
       //
