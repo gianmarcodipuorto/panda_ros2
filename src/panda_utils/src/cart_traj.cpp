@@ -257,7 +257,6 @@ private:
       Eigen::Vector3d angular_vel =
           current_quat.toRotationMatrix() * axis * theta_dot;
       // Eigen::Vector3d angular_vel = initial_rot * axis * theta_dot;
-      // Eigen::Vector3d angular_vel = axis * theta_dot;
       cmd_twist.angular.x = angular_vel.x();
       cmd_twist.angular.y = angular_vel.y();
       cmd_twist.angular.z = angular_vel.z();
@@ -266,7 +265,6 @@ private:
       Eigen::Vector3d angular_accel =
           current_quat.toRotationMatrix() * axis * theta_ddot;
       // Eigen::Vector3d angular_accel = initial_rot * axis * theta_ddot;
-      // Eigen::Vector3d angular_accel = axis * theta_ddot;
       cmd_accel.angular.x = angular_accel.x();
       cmd_accel.angular.y = angular_accel.y();
       cmd_accel.angular.z = angular_accel.z();

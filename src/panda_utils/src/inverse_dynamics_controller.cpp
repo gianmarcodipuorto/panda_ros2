@@ -902,7 +902,7 @@ void InverseDynamicsController::control() {
   // }
 
   desired_joints_position.setZero();
-  // clamp_joint_config();
+  clamp_joint_config();
   RCLCPP_INFO_STREAM(
       this->get_logger(),
       "Current desired config at initial loop: ["

@@ -87,7 +87,7 @@ private:
 };
 
 // Computes the homogeneous transformation following the standard DH convention
-Eigen::Isometry3d dh_transform(DHParameters dhparam) {
+inline Eigen::Isometry3d dh_transform(DHParameters dhparam) {
   Eigen::Matrix4d T;
   Eigen::Isometry3d iso;
   T << cos(dhparam.theta), -sin(dhparam.theta) * cos(dhparam.alpha),
@@ -372,7 +372,7 @@ Robot<NUM_JOINTS>::pose(Eigen::Vector<double, NUM_JOINTS> joint_values) {
   return this->pose(joints);
 }
 
-Eigen::Quaterniond quaternionContinuity(const Eigen::Quaterniond &q,
+inline Eigen::Quaterniond quaternionContinuity(const Eigen::Quaterniond &q,
                                         const Eigen::Quaterniond &oldQ) {
   auto tmp = q.vec().transpose() * oldQ.vec();
   if (tmp < -0.01) {

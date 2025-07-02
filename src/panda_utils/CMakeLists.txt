@@ -37,6 +37,10 @@ add_library(robot_model
   src/robot_model.cpp
 )
 
+add_library(debug_publisher
+  src/debug_publisher.cpp
+)
+
 target_link_libraries(robot_model
   ${pinocchio_LIBRARIES}
 )
@@ -44,6 +48,19 @@ target_link_libraries(robot_model
 ament_target_dependencies(robot_model
   ament_index_cpp
   tf2_eigen
+)
+
+ament_target_dependencies(debug_publisher
+  rclcpp_lifecycle
+  rclcpp
+  sensor_msgs
+  panda_interfaces
+  geometry_msgs
+  tf2_eigen
+)
+
+target_link_libraries(debug_publisher
+  franka
 )
 
 add_executable(send_joints_cmd_server ./src/send_joints_pos_cmd.cpp)
@@ -89,7 +106,7 @@ ament_target_dependencies(joint_traj_example rclcpp panda_interfaces std_msgs tf
 
 add_executable(impedance_controller ./src/impedance_controller.cpp)
 ament_target_dependencies(impedance_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools)
-target_link_libraries(impedance_controller robot_model franka)
+target_link_libraries(impedance_controller robot_model franka debug_publisher)
 
 add_executable(joint_traj_test ./examples/joint_trajectory_test.cpp)
 ament_target_dependencies(joint_traj_test rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
