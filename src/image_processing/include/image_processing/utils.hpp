@@ -1,5 +1,6 @@
 #pragma once
 #include "image_processing/constants.hpp"
+#include <opencv2/core/types.hpp>
 #include <opencv2/opencv.hpp>
 
 namespace skeleton_utils {
@@ -20,11 +21,13 @@ inline cv::Scalar get_gradient_color(float confidence) {
 
 inline void draw_skeleton(cv::Mat &image, std::map<int, landmark> landmarks,
                           const std::vector<std::pair<int, int>> &skeleton,
-                          const float confidence_thresh) {
+                          const float confidence_thresh,
+                          bool is_pixel_normalized = true) {
   const int num_keypoints = 17;
 
   // Drawing segment first
   auto end = landmarks.end();
+
   for (std::pair<int, int> segment : skeleton) {
     if (landmarks.find(segment.first) != end &&
         landmarks.find(segment.second) != end) {
@@ -32,10 +35,20 @@ inline void draw_skeleton(cv::Mat &image, std::map<int, landmark> landmarks,
       landmark second = landmarks[segment.second];
       if (first.conf > confidence_thresh && second.conf > confidence_thresh) {
 
-        cv::Point first(landmarks[segment.first].x * image.cols,
-                        landmarks[segment.first].y * image.rows);
-        cv::Point second(landmarks[segment.second].x * image.cols,
-                         landmarks[segment.second].y * image.rows);
+        cv::Point first, second;
+        if (is_pixel_normalized) {
+          first.x = landmarks[segment.first].x;
+          first.y = landmarks[segment.first].y;
+          second.x = landmarks[segment.second].x;
+          second.y = landmarks[segment.second].y;
+        } else {
+
+          first.x = landmarks[segment.first].x * image.cols;
+          first.y = landmarks[segment.first].y * image.rows;
+          second.x = landmarks[segment.second].x * image.cols;
+          second.y = landmarks[segment.second].y * image.rows;
+        }
+
         cv::line(image, first, second, cv::Scalar(0, 0, 255), 3);
       }
     }
@@ -61,9 +74,6 @@ inline void draw_skeleton(cv::Mat &image, std::map<int, landmark> landmarks,
       cv::circle(image, point, 3, get_gradient_color(mark.conf), -1);
     }
   }
-  // std::cout << "Medium confidence on all keypoints: "
-  //           << conf_sum / num_keypoints << std::endl
-  //           << std::endl;
 }
 
 } // namespace skeleton_utils

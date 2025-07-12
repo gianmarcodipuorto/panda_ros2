@@ -21,6 +21,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(panda_interfaces REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 
 include_directories(
@@ -58,7 +59,7 @@ target_link_libraries(optical_flow_example
 )
 
 add_executable(skeleton_track ./src/skeleton_track.cpp)
-ament_target_dependencies(skeleton_track OpenCV ament_index_cpp rclcpp sensor_msgs cv_bridge image_geometry realtime_tools tf2 tf2_ros tf2_eigen panda_interfaces)
+ament_target_dependencies(skeleton_track OpenCV ament_index_cpp rclcpp sensor_msgs cv_bridge image_geometry realtime_tools tf2 tf2_ros tf2_eigen panda_interfaces visualization_msgs)
 target_link_libraries(skeleton_track
   onnxruntime
   skeleton_infer

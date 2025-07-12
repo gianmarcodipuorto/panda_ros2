@@ -10,6 +10,7 @@
 #include "sensor_msgs/msg/image.hpp"
 #include "std_msgs/msg/header.hpp"
 #include "tf2_eigen/tf2_eigen.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 #include <Eigen/src/Core/Matrix.h>
 #include <ament_index_cpp/get_package_prefix.hpp>
 #include <boost/fusion/sequence/intrinsic_fwd.hpp>
@@ -38,6 +39,7 @@
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <utility>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 template <typename message> using Subscription = rclcpp::Subscription<message>;
 using sensor_msgs::msg::Image;
@@ -60,6 +62,8 @@ template <typename type, int STATES> struct state {
   // Prediction matrix
   Eigen::Matrix<type, STATES, STATES> P;
   bool is_initialized;
+  // Num of frames the keypoint had a good confidence
+  int conf_frames = 0;
 
   void init(Eigen::Vector<type, STATES> init_state,
             Eigen::Matrix<type, STATES, STATES> init_P) {
@@ -69,6 +73,7 @@ template <typename type, int STATES> struct state {
   };
 
   void deinit() {
+    conf_frames = 0;
     is_initialized = false;
     internal_state.setZero();
   }
@@ -90,19 +95,22 @@ enum class TargetState {
 
 struct StateTransitionParams {
   // Minimum number of frames to switch in tracking mode
-  int no_person_to_tracked_frames = 2;
+  int no_person_to_tracked_frames = 5;
   // Minimum number of valid keypoints to start tracking
-  int min_tracked_valid_keypoints = 7;
+  int min_tracked_valid_keypoints = 6;
   // Minimum number of frames to lose the tracking
-  int tracked_to_lost_frames = 3;
+  int tracked_to_lost_frames = 6;
   // Minimum number of valid keypoints to keep someone tracked
-  int min_keypoints_valid_lost = 5;
+  int min_keypoints_valid_lost = 6;
   // Maximum time the tracker can remain in lost mode
-  double lost_time = 2.0;
+  double lost_time = 0.5;
   // Minimum confidence of valid keypoints to track a person
-  double confidence_threshold = 0.4;
+  double confidence_threshold = 0.55;
   // Minimum confidence to not consider a keypoint as an hallucination
-  double hallucination_threshold = 0.2;
+  double hallucination_threshold = 0.25;
+  // Minimum number of frames with good confidence to consider a keypoint
+  // recognized
+  int min_conf_frames = 8;
 };
 
 struct DecisionData {
@@ -121,9 +129,17 @@ public:
       : Node("skeleton_tracker"), net(model_path, net_log_id, net_tensor_shape),
         min_depth(min_depth), max_depth(max_depth) {
 
-    this->declare_parameter<double>("process_noise", 1.0);
-    this->declare_parameter<double>("measurement_noise", 0.4);
+    this->declare_parameter<double>("process_noise", 0.5);
+    this->declare_parameter<double>("measurement_noise", 1.0);
     this->declare_parameter<bool>("no_depth", false);
+
+    transition_params.lost_time = 0.5;
+    transition_params.no_person_to_tracked_frames = 5;
+    transition_params.tracked_to_lost_frames = 6;
+    transition_params.min_keypoints_valid_lost = 6;
+    transition_params.min_tracked_valid_keypoints = 6;
+    transition_params.confidence_threshold = 0.55;
+    transition_params.confidence_threshold = 0.25;
 
     // Initializing kalman filter variables
     kalman_params.Q.setIdentity();
@@ -146,6 +162,7 @@ public:
       state.P = kalman_params.Q;
       state.internal_state.setZero();
       state.is_initialized = false;
+      state.conf_frames = 0;
     }
 
     landmark_3d.resize(num_landmarks);
@@ -154,13 +171,6 @@ public:
       point.y = 0.0;
       point.z = 0.0;
     }
-
-    transition_params.lost_time = 2.0;
-    transition_params.no_person_to_tracked_frames = 2;
-    transition_params.tracked_to_lost_frames = 3;
-    transition_params.min_keypoints_valid_lost = 5;
-    transition_params.min_tracked_valid_keypoints = 7;
-    transition_params.confidence_threshold = 0.3;
 
     last_image_stamp = this->now();
     bool no_depth = this->get_parameter("no_depth").as_bool();
@@ -185,6 +195,10 @@ public:
     auto camera_info_cb = [this](const sensor_msgs::msg::CameraInfo msg) {
       current_camera_info = msg;
       image_geom.fromCameraInfo(current_camera_info);
+      // RCLCPP_INFO_STREAM(this->get_logger(),
+      //                    "Height and width of camera img: "
+      //                        << image_geom.cameraInfo().height << ", "
+      //                        << image_geom.cameraInfo().width);
     };
 
     rgb_image_sub = this->create_subscription<Image>(
@@ -211,6 +225,11 @@ public:
                                           image_constants::DEFAULT_TOPIC_QOS));
 
     tf_skel_publisher = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+
+    skeleton_marker_pub =
+        this->create_publisher<visualization_msgs::msg::MarkerArray>(
+            image_constants::skeleton_marker_array_topic,
+            image_constants::DEFAULT_TOPIC_QOS);
 
     auto timer_cb = [this, no_depth]() {
       // If these two images are not nullptr
@@ -240,13 +259,6 @@ public:
           // Only call this if you have a real depth image
           depths = calculate_depths(cv_bridge::toCvCopy(depth_img)->image);
         }
-        // std::vector<double> depths =
-        //     calculate_depths(cv_bridge::toCvCopy(depth_img)->image);
-        // if (no_depth) {
-        //   for (auto &depth : depths) {
-        //     depth = 1.0;
-        //   }
-        // }
         std::vector<std::optional<geometry_msgs::msg::Point>> points =
             project_pixels_to_3d(depths);
 
@@ -292,7 +304,7 @@ public:
               transition_params.lost_time) {
             // Switch to no tracked person state and deinitialize all the kalman
             // filters
-            for (auto filt : filter_state) {
+            for (auto &filt : filter_state) {
               filt.deinit();
             }
             tracking_state = TargetState::NO_PERSON;
@@ -328,10 +340,9 @@ public:
 
         // 3) Publish infos to external network
         //
-        if (tracking_state == TargetState::PERSON_LOST ||
-            tracking_state == TargetState::PERSON_TRACKED) {
-          this->publish_keypoints_tf();
-        }
+        this->publish_skeleton_markers();
+        this->publish_keypoints_tf();
+
         skel_image_output =
             *(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8",
                                  this->create_skel_img(rgb_img))
@@ -410,6 +421,8 @@ private:
   // Publishers
   realtime_tools::RealtimePublisher<Image>::SharedPtr skeleton_image_pub{};
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_skel_publisher;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+      skeleton_marker_pub;
   rclcpp::TimerBase::SharedPtr timer;
 
   // DEBUG PUBLISHERS
@@ -459,6 +472,7 @@ private:
   std::vector<std::optional<geometry_msgs::msg::Point>>
   project_pixels_to_3d(std::vector<double> depths);
   void publish_keypoints_tf();
+  void publish_skeleton_markers();
   std::vector<double> calculate_depths(cv::Mat depth_image);
   void kalman_predict(
       const std::vector<std::optional<geometry_msgs::msg::Point>> &points,
@@ -470,20 +484,25 @@ private:
     // Reset current valid keypoints number
     tracking_decision_data.valid_keypoints = 0;
     double conf_sum = 0.0;
+    int decision_keypoints = 0;
 
     for (int i = 0; i < num_landmarks; i++) {
       auto point = points[i];
       auto landmark = landmarks[i];
       if (landmark.conf > transition_params.hallucination_threshold) {
+        decision_keypoints += 1;
         conf_sum += landmark.conf;
+      } else {
+        filter_state[i].conf_frames = 0;
       }
       if (point.has_value() &&
           landmark.conf > transition_params.confidence_threshold) {
+        filter_state[i].conf_frames += 1;
         tracking_decision_data.valid_keypoints += 1;
       }
     }
 
-    tracking_decision_data.mean_confidence = conf_sum / num_landmarks;
+    tracking_decision_data.mean_confidence = conf_sum / decision_keypoints;
 
     if (tracking_decision_data.mean_confidence >=
         transition_params.confidence_threshold) {
@@ -513,7 +532,8 @@ private:
       auto point = points[i];
       auto landmark = landmarks[i];
       if (landmark.conf >= transition_params.confidence_threshold &&
-          point.has_value()) {
+          point.has_value() &&
+          filter_state[i].conf_frames > transition_params.min_conf_frames) {
         Eigen::Vector<double, 6> state;
         state.setZero();
         state.x() = point->x;
@@ -613,27 +633,6 @@ void SkeletonTracker::kalman_predict(
       Eigen::Matrix<double, 6, 3> K_gain =
           pred_P * kalman_params.H.transpose() * S.inverse();
 
-      // RCLCPP_INFO_STREAM(this->get_logger(), "Kalman gain matrix: " << K_gain);
-      // RCLCPP_INFO_STREAM(this->get_logger(), "P_K_1: " << pred_P);
-      // RCLCPP_INFO_STREAM(this->get_logger(),
-      //                    "P_k_1 * H': " << pred_P *
-      //                                          kalman_params.H.transpose());
-      // RCLCPP_INFO_STREAM(this->get_logger(), "S: " << S);
-      // RCLCPP_INFO_STREAM(this->get_logger(), "S^-1: " << S.inverse());
-
-      // if (image_constants::coco_keypoints[i] == "left_wrist") {
-      //   RCLCPP_INFO_STREAM(this->get_logger(),
-      //                      "Prediction matrix of left wrist: " << pred_P);
-      //   RCLCPP_INFO_STREAM(this->get_logger(),
-      //                      "Kalman gain matrix of left wrist: " << K_gain);
-      // }
-      // if (image_constants::coco_keypoints[i] == "right_wrist") {
-      //   RCLCPP_INFO_STREAM(this->get_logger(),
-      //                      "Prediction matrix of right wrist: " << pred_P);
-      //   RCLCPP_INFO_STREAM(this->get_logger(),
-      //                      "Kalman gain matrix of right wrist: " << K_gain);
-      // }
-
       // Update
       // If the point inferred is valid i include the measurement, otherwise
       // just predict based on model and current state
@@ -654,7 +653,8 @@ void SkeletonTracker::kalman_predict(
       // Initialize new keypoint only if requested with init_new
       if (point.has_value() &&
           landmarks[i].conf >= transition_params.confidence_threshold &&
-          init_new) {
+          init_new &&
+          filter_state[i].conf_frames > transition_params.min_conf_frames) {
         Eigen::Vector<double, 6> state;
         state.setZero();
         state(0) = point->x;
@@ -665,10 +665,96 @@ void SkeletonTracker::kalman_predict(
     }
 
     dbg_uncertainties[i] = current_state.P.diagonal();
+
+    // Update the single 3d landmark at each call to kalman
     landmark_3d[i].x = current_state.internal_state.x();
     landmark_3d[i].y = current_state.internal_state.y();
     landmark_3d[i].z = current_state.internal_state.z();
   }
+}
+
+void SkeletonTracker::publish_skeleton_markers() {
+  auto now = this->get_clock()->now();
+  visualization_msgs::msg::MarkerArray marker_array;
+
+  // --- 1. Create the SPHERE_LIST for the joints ---
+  visualization_msgs::msg::Marker joint_marker;
+  joint_marker.header.frame_id = camera_frame; // e.g., "camera_link"
+  joint_marker.header.stamp = now;
+  joint_marker.ns = "joints";
+  joint_marker.id = 0;
+  joint_marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+  joint_marker.action = visualization_msgs::msg::Marker::ADD;
+  joint_marker.pose.orientation.w = 1.0;
+
+  // Define sphere properties
+  joint_marker.scale.x = 0.03; // Sphere diameter in meters
+  joint_marker.scale.y = 0.03;
+  joint_marker.scale.z = 0.03;
+
+  // Loop through all landmarks
+  for (int i = 0; i < num_landmarks; ++i) {
+    if (filter_state[i].is_initialized) {
+      // Add the 3D point from your Kalman filter's state
+      geometry_msgs::msg::Point p = landmark_3d[i];
+      joint_marker.points.push_back(p);
+
+      // Set the color based on confidence or uncertainty
+      std_msgs::msg::ColorRGBA color;
+      // Example: Green for high confidence, Red for low.
+      // You can get more fancy with gradients here.
+      float confidence = landmarks.count(i) ? landmarks[i].conf : 0.0f;
+      color.r = 1.0f - confidence;
+      color.g = confidence;
+      color.b = 0.0f;
+      color.a = 1.0f;
+      joint_marker.colors.push_back(color);
+    }
+  }
+
+  // Add the joint marker to the array
+  marker_array.markers.push_back(joint_marker);
+
+  // --- 2. Create the LINE_LIST for the bones ---
+  visualization_msgs::msg::Marker bone_marker;
+  bone_marker.header.frame_id = camera_frame;
+  bone_marker.header.stamp = now;
+  bone_marker.ns = "bones";
+  bone_marker.id = 1;
+  bone_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+  bone_marker.action = visualization_msgs::msg::Marker::ADD;
+  bone_marker.pose.orientation.w = 1.0;
+
+  // Define line properties
+  bone_marker.scale.x = 0.015; // Line width in meters
+
+  // A single color for all bones
+  bone_marker.color.r = 1.0f;
+  bone_marker.color.g = 1.0f;
+  bone_marker.color.b = 1.0f;
+  bone_marker.color.a = 1.0f;
+
+  // Loop through our defined bone connections
+  for (const auto &bone : image_constants::skeleton) {
+    int start_idx = bone.first;
+    int end_idx = bone.second;
+
+    // Only draw the bone if both of its joints are being tracked
+    if (filter_state[start_idx].is_initialized &&
+        filter_state[end_idx].is_initialized) {
+      geometry_msgs::msg::Point p_start = landmark_3d[start_idx];
+      geometry_msgs::msg::Point p_end = landmark_3d[end_idx];
+
+      bone_marker.points.push_back(p_start);
+      bone_marker.points.push_back(p_end);
+    }
+  }
+
+  // Add the bone marker to the array
+  marker_array.markers.push_back(bone_marker);
+
+  // --- 3. Publish the entire array ---
+  skeleton_marker_pub->publish(marker_array);
 }
 
 void SkeletonTracker::publish_keypoints_tf() {
@@ -679,6 +765,9 @@ void SkeletonTracker::publish_keypoints_tf() {
 
   for (int i = 0; i < num_landmarks; i++) {
 
+    if (!filter_state[i].is_initialized) {
+      continue;
+    }
     tf.child_frame_id = image_constants::coco_keypoints[i];
 
     tf.transform.translation.x = filter_state[i].internal_state.x();
@@ -695,6 +784,8 @@ std::vector<double> SkeletonTracker::calculate_depths(cv::Mat depth_image) {
   height = depth_image.rows;
   width = depth_image.cols;
 
+  RCLCPP_INFO_ONCE(this->get_logger(), "Depth image type: %d",
+                   depth_image.type());
   for (size_t i = 0; i < landmarks.size(); i++) {
     depths.push_back(
         depth_image.at<float>(landmarks[i].y * height, landmarks[i].x * width));
@@ -755,7 +846,19 @@ SkeletonTracker::project_pixels_to_3d(std::vector<double> depths) {
 cv::Mat SkeletonTracker::create_skel_img(Image background_scene) {
 
   cv::Mat img = cv_bridge::toCvCopy(background_scene)->image;
-  skeleton_utils::draw_skeleton(img, landmarks, image_constants::skeleton, 0.3);
+  std::map<int, skeleton_utils::landmark> tmp_landmarks = landmarks;
+  for (int i = 0; i < num_landmarks; i++) {
+    auto mark_3d = landmark_3d[i];
+    cv::Point3d tmp_point;
+    tmp_point.x = mark_3d.x;
+    tmp_point.y = mark_3d.y;
+    tmp_point.z = mark_3d.z;
+    auto mark = image_geom.project3dToPixel(tmp_point);
+    tmp_landmarks[i].x = mark.x;
+    tmp_landmarks[i].y = mark.y;
+  }
+  skeleton_utils::draw_skeleton(img, landmarks, image_constants::skeleton, 0.3,
+                                false);
 
   return img;
 }

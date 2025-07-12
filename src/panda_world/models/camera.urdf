@@ -22,7 +22,8 @@
   <joint name="camera_joint" type="fixed">
     <parent link="world"/>
     <child link="camera_link"/>
-    <origin xyz="0.5 1 2.2" rpy="0.1 0.9 -1.57"/>
+    <!-- <origin xyz="0.5 1 2.2" rpy="0.1 0.9 -1.57"/> -->
+    <origin xyz="0 1.5 3.2" rpy="0.1 0.9 -1.57"/>
   </joint>
 
 
@@ -40,7 +41,8 @@
           </image>
           <clip>
             <near>0.8</near>
-            <far>4.0</far>
+            <!-- <far>4.0</far> -->
+            <far>6.0</far>
           </clip>
         </camera>
         </sensor>

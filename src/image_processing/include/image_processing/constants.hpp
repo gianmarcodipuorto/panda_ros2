@@ -35,5 +35,6 @@ const std::string rgb_image_topic{"/image_raw"};
 const std::string depth_image_topic{"/depth/image_raw"};
 const std::string camera_info_topic{"/camera_info"};
 const std::string skeleton_image_topic{"/skeleton"};
+const std::string skeleton_marker_array_topic{"/skeleton_array"};
 const int DEFAULT_TOPIC_QOS = 10;
 } // namespace image_constants
