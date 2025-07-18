@@ -15,9 +15,12 @@
 #include <ament_index_cpp/get_package_prefix.hpp>
 #include <boost/fusion/sequence/intrinsic_fwd.hpp>
 #include <cmath>
+#include <cstdint>
 #include <cv_bridge/cv_bridge.hpp>
 #include <geometry_msgs/msg/vector3_stamped.hpp>
 #include <image_geometry/pinhole_camera_model.hpp>
+#include <image_geometry/stereo_camera_model.hpp>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <opencv2/core.hpp>
@@ -37,8 +40,14 @@
 #include <rclcpp/utilities.hpp>
 #include <realtime_tools/realtime_publisher.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
+#include <string>
+#include <tf2/buffer_core.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
 #include <utility>
+#include <vector>
 #include <visualization_msgs/msg/marker_array.hpp>
 
 template <typename message> using Subscription = rclcpp::Subscription<message>;
@@ -62,8 +71,12 @@ template <typename type, int STATES> struct state {
   // Prediction matrix
   Eigen::Matrix<type, STATES, STATES> P;
   bool is_initialized;
-  // Num of frames the keypoint had a good confidence
-  int conf_frames = 0;
+  // Deque to keep last confidence values
+  std::deque<double> confidence_history;
+  // Moving average confidence of the last frames
+  double ma_conf = 0.0;
+  // Num of frames the keypoint has been invalid (out of depth)
+  int invalid_keypoint_frames = 0;
 
   void init(Eigen::Vector<type, STATES> init_state,
             Eigen::Matrix<type, STATES, STATES> init_P) {
@@ -73,9 +86,26 @@ template <typename type, int STATES> struct state {
   };
 
   void deinit() {
-    conf_frames = 0;
+    ma_conf = 0.0;
     is_initialized = false;
     internal_state.setZero();
+  }
+
+  void calc_ma(int ma_window_size) {
+
+    if (confidence_history.size() > ma_window_size) {
+      confidence_history.pop_back();
+    }
+
+    double sum = 0.0;
+    if (!confidence_history.empty()) {
+      for (double val : confidence_history) {
+        sum += val;
+      }
+      ma_conf = sum / confidence_history.size();
+    } else {
+      ma_conf = 0.0;
+    }
   }
 };
 
@@ -94,29 +124,27 @@ enum class TargetState {
 };
 
 struct StateTransitionParams {
-  // Minimum number of frames to switch in tracking mode
-  int no_person_to_tracked_frames = 5;
   // Minimum number of valid keypoints to start tracking
   int min_tracked_valid_keypoints = 6;
-  // Minimum number of frames to lose the tracking
-  int tracked_to_lost_frames = 6;
   // Minimum number of valid keypoints to keep someone tracked
   int min_keypoints_valid_lost = 6;
   // Maximum time the tracker can remain in lost mode
   double lost_time = 0.5;
-  // Minimum confidence of valid keypoints to track a person
-  double confidence_threshold = 0.55;
+  // Minimum confidence of single valid keypoint to track a person
+  double single_keypoint_ma_confidence_threshold = 0.35;
+  // MA mean confidence to keep a keypoint valid
+  double ma_confidence_threshold = 0.40;
   // Minimum confidence to not consider a keypoint as an hallucination
   double hallucination_threshold = 0.25;
-  // Minimum number of frames with good confidence to consider a keypoint
+  // Minimum number of frames with point != null to consider a keypoint
   // recognized
-  int min_conf_frames = 8;
+  int min_invalid_frames = 30;
 };
 
 struct DecisionData {
   int valid_frames = 0;
   int non_valid_frames = 0;
-  double mean_confidence = 0.0;
+  double ma_mean_confidence = 0.0;
   int valid_keypoints = 0;
   rclcpp::Time lost_event_time{};
 };
@@ -132,14 +160,24 @@ public:
     this->declare_parameter<double>("process_noise", 0.5);
     this->declare_parameter<double>("measurement_noise", 1.0);
     this->declare_parameter<bool>("no_depth", false);
+    this->declare_parameter<int>("MA_window_size", 40);
+    std::map<std::string, double> thresholds_parameters;
+    thresholds_parameters["ma_confidence_threshold"] = 0.40;
+    thresholds_parameters["hallucination_threshold"] = 0.25;
+    thresholds_parameters["single_keypoint_ma_confidence_threshold"] = 0.35;
+    this->declare_parameters<double>(std::string{}, thresholds_parameters);
 
-    transition_params.lost_time = 0.5;
-    transition_params.no_person_to_tracked_frames = 5;
-    transition_params.tracked_to_lost_frames = 6;
     transition_params.min_keypoints_valid_lost = 6;
     transition_params.min_tracked_valid_keypoints = 6;
-    transition_params.confidence_threshold = 0.55;
-    transition_params.confidence_threshold = 0.25;
+    transition_params.ma_confidence_threshold =
+        this->get_parameter("ma_confidence_threshold").as_double();
+    transition_params.hallucination_threshold =
+        this->get_parameter("hallucination_threshold").as_double();
+    transition_params.single_keypoint_ma_confidence_threshold =
+        this->get_parameter("single_keypoint_ma_confidence_threshold")
+            .as_double();
+
+    MA_window_size = this->get_parameter("MA_window_size").as_int();
 
     // Initializing kalman filter variables
     kalman_params.Q.setIdentity();
@@ -162,7 +200,6 @@ public:
       state.P = kalman_params.Q;
       state.internal_state.setZero();
       state.is_initialized = false;
-      state.conf_frames = 0;
     }
 
     landmark_3d.resize(num_landmarks);
@@ -176,29 +213,23 @@ public:
     bool no_depth = this->get_parameter("no_depth").as_bool();
 
     auto rgb_img_cb = [this](const Image::SharedPtr img) {
-      std::lock_guard<std::mutex> img_mutex(images_mutex);
+      // std::lock_guard<std::mutex> img_mutex(rgb_mutex);
       current_rgb_image = img;
-      delta_time = this->now() - last_image_stamp;
-      // RCLCPP_INFO_STREAM(this->get_logger(),
-      //                    "Delta time: " << delta_time.seconds());
-      // RCLCPP_INFO_STREAM(
-      //     this->get_logger(),
-      //     "Current image stamp: " << current_rgb_image->header.stamp.sec);
-      last_image_stamp = this->now();
     };
 
     auto depth_img_cb = [this](const Image::SharedPtr img) {
-      std::lock_guard<std::mutex> img_mutex(images_mutex);
+      // std::lock_guard<std::mutex> img_mutex(depth_img_mutex);
       current_depth_image = img;
     };
 
-    auto camera_info_cb = [this](const sensor_msgs::msg::CameraInfo msg) {
-      current_camera_info = msg;
-      image_geom.fromCameraInfo(current_camera_info);
-      // RCLCPP_INFO_STREAM(this->get_logger(),
-      //                    "Height and width of camera img: "
-      //                        << image_geom.cameraInfo().height << ", "
-      //                        << image_geom.cameraInfo().width);
+    auto rgb_camera_info_cb = [this](const sensor_msgs::msg::CameraInfo msg) {
+      current_rgb_camera_info = msg;
+      rgb_image_geom.fromCameraInfo(current_rgb_camera_info);
+    };
+
+    auto depth_camera_info_cb = [this](const sensor_msgs::msg::CameraInfo msg) {
+      current_depth_camera_info = msg;
+      depth_image_geom.fromCameraInfo(current_depth_camera_info);
     };
 
     rgb_image_sub = this->create_subscription<Image>(
@@ -206,18 +237,27 @@ public:
         rgb_img_cb);
 
     std::string depth_image_topic;
+    std::string depth_camera_info_topic;
     if (no_depth) {
+      depth_camera_info_topic = image_constants::rgb_camera_info_topic;
       depth_image_topic = image_constants::rgb_image_topic;
     } else {
+      depth_camera_info_topic = image_constants::depth_camera_info_topic;
       depth_image_topic = image_constants::depth_image_topic;
     }
 
     depth_image_sub = this->create_subscription<Image>(
         depth_image_topic, image_constants::DEFAULT_TOPIC_QOS, depth_img_cb);
 
-    camera_info_sub = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-        image_constants::camera_info_topic, image_constants::DEFAULT_TOPIC_QOS,
-        camera_info_cb);
+    rgb_camera_info_sub =
+        this->create_subscription<sensor_msgs::msg::CameraInfo>(
+            image_constants::rgb_camera_info_topic,
+            image_constants::DEFAULT_TOPIC_QOS, rgb_camera_info_cb);
+
+    depth_camera_info_sub =
+        this->create_subscription<sensor_msgs::msg::CameraInfo>(
+            image_constants::depth_camera_info_topic,
+            image_constants::DEFAULT_TOPIC_QOS, depth_camera_info_cb);
 
     skeleton_image_pub =
         std::make_shared<realtime_tools::RealtimePublisher<Image>>(
@@ -225,6 +265,11 @@ public:
                                           image_constants::DEFAULT_TOPIC_QOS));
 
     tf_skel_publisher = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+
+    tf_listener = std::make_unique<tf2_ros::TransformListener>(tf_buffer);
+
+    tf_static_broadcaster =
+        std::make_unique<tf2_ros::StaticTransformBroadcaster>(this);
 
     skeleton_marker_pub =
         this->create_publisher<visualization_msgs::msg::MarkerArray>(
@@ -234,12 +279,21 @@ public:
     auto timer_cb = [this, no_depth]() {
       // If these two images are not nullptr
       if (current_rgb_image && current_depth_image) {
+        if (last_image_stamp.seconds() == 0) { // First frame
+          last_image_stamp = current_rgb_image->header.stamp;
+          return; // Skip processing for the very first frame
+        }
+        delta_time =
+            rclcpp::Time(current_rgb_image->header.stamp) - last_image_stamp;
+        last_image_stamp = current_rgb_image->header.stamp;
+
         auto start = std::chrono::high_resolution_clock::now();
         rclcpp::Time now = this->now();
         // Save current messages to not lose future messages
         Image rgb_img, depth_img;
         {
-          std::lock_guard<std::mutex> img_mutex(images_mutex);
+          // std::lock_guard<std::mutex> img_mutex(rgb_mutex);
+          // std::lock_guard<std::mutex> depth_mutex(depth_img_mutex);
           rgb_img = *current_rgb_image;
           depth_img = *current_depth_image;
         }
@@ -249,34 +303,44 @@ public:
         cv_bridge::CvImagePtr rgb_img_mat =
             cv_bridge::toCvCopy(rgb_img, "rgb8");
         net.load_input(rgb_img_mat->image);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Running model");
         net.run(false);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Finished running model");
         landmarks = net.get_landmarks();
+        auto depth_pixels = calculate_depth_pixels();
         std::vector<double> depths;
         if (no_depth) {
           // If no depth, create a vector of 1.0s. Don't call calculate_depths.
           depths.assign(num_landmarks, 1.0);
         } else {
           // Only call this if you have a real depth image
-          depths = calculate_depths(cv_bridge::toCvCopy(depth_img)->image);
+          depths = calculate_depths(cv_bridge::toCvCopy(depth_img)->image,
+                                    depth_pixels);
         }
         std::vector<std::optional<geometry_msgs::msg::Point>> points =
             project_pixels_to_3d(depths);
 
         // 2) Take decision based on current state
         //
+
+        // Update internal filter state and tracking data
+        calc_state_track_data(points);
+
+        // Update higher level tracking data
         calc_decision_data(points);
+
         switch (tracking_state) {
         case TargetState::NO_PERSON: {
 
-          if (tracking_decision_data.valid_frames >=
-                  transition_params.no_person_to_tracked_frames &&
+          if (tracking_decision_data.ma_mean_confidence >=
+                  transition_params.ma_confidence_threshold &&
               tracking_decision_data.valid_keypoints >=
                   transition_params.min_tracked_valid_keypoints) {
 
             // switch to tracking person and initialize kalman filters
             //
             RCLCPP_INFO_STREAM(this->get_logger(),
-                               "Switching to tracked person state");
+                               "Switching to tracking person");
             no_person_to_tracked(points);
             tracking_state = TargetState::PERSON_TRACKED;
             break;
@@ -284,12 +348,15 @@ public:
           break;
         }
         case TargetState::PERSON_TRACKED: {
-          if (tracking_decision_data.mean_confidence <
-                  transition_params.confidence_threshold ||
-              tracking_decision_data.valid_keypoints <
-                  transition_params.min_keypoints_valid_lost) {
+          if (tracking_decision_data.ma_mean_confidence <
+              transition_params.ma_confidence_threshold
+              // ||
+              // tracking_decision_data.valid_keypoints <
+              //     transition_params.min_keypoints_valid_lost
+          ) {
             // switch to lost person and initialize the lost event time for lost
             // state
+            RCLCPP_INFO_STREAM(this->get_logger(), "Switching to lost person");
             this->kalman_predict(points, false, true);
             tracking_decision_data.lost_event_time = now;
             tracking_state = TargetState::PERSON_LOST;
@@ -304,15 +371,18 @@ public:
               transition_params.lost_time) {
             // Switch to no tracked person state and deinitialize all the kalman
             // filters
+            RCLCPP_INFO_STREAM(this->get_logger(), "Switching to NO person");
             for (auto &filt : filter_state) {
               filt.deinit();
             }
             tracking_state = TargetState::NO_PERSON;
             break;
-          } else if (tracking_decision_data.mean_confidence >=
-                     transition_params.confidence_threshold) {
+          } else if (tracking_decision_data.ma_mean_confidence >=
+                     transition_params.ma_confidence_threshold) {
             // Switch to tracked person state, probably there have been an
             // obstruction for some frames
+            RCLCPP_INFO_STREAM(this->get_logger(),
+                               "Switching to tracked person from lost");
             tracking_state = TargetState::PERSON_TRACKED;
             this->kalman_predict(points);
             break;
@@ -322,21 +392,21 @@ public:
           break;
         }
         }
-        switch (tracking_state) {
-
-        case TargetState::NO_PERSON: {
-          RCLCPP_INFO_STREAM(this->get_logger(), "No person tracked");
-          break;
-        }
-        case TargetState::PERSON_TRACKED: {
-          RCLCPP_INFO_STREAM(this->get_logger(), "Person tracked");
-          break;
-        }
-        case TargetState::PERSON_LOST: {
-          RCLCPP_INFO_STREAM(this->get_logger(), "Person lost");
-          break;
-        } break;
-        }
+        // switch (tracking_state) {
+        //
+        // case TargetState::NO_PERSON: {
+        //   RCLCPP_INFO_STREAM(this->get_logger(), "No person tracked");
+        //   break;
+        // }
+        // case TargetState::PERSON_TRACKED: {
+        //   RCLCPP_INFO_STREAM(this->get_logger(), "Person tracked");
+        //   break;
+        // }
+        // case TargetState::PERSON_LOST: {
+        //   RCLCPP_INFO_STREAM(this->get_logger(), "Person lost");
+        //   break;
+        // } break;
+        // }
 
         // 3) Publish infos to external network
         //
@@ -345,7 +415,7 @@ public:
 
         skel_image_output =
             *(cv_bridge::CvImage(std_msgs::msg::Header(), "rgb8",
-                                 this->create_skel_img(rgb_img))
+                                 this->create_skel_img(depths, rgb_img))
                   .toImageMsg());
         skeleton_image_pub->tryPublish(skel_image_output.value());
         debug_print();
@@ -362,7 +432,21 @@ public:
       }
     };
 
-    timer = rclcpp::create_timer(this, this->get_clock(), 1ms, timer_cb);
+    timer = rclcpp::create_timer(this, this->get_clock(), 25ms, timer_cb);
+
+    if (!tf_buffer._frameExists(camera_frame)) {
+      RCLCPP_INFO_STREAM(this->get_logger(),
+                         "Frame " << camera_frame
+                                  << " does not exist. Creating it now");
+      geometry_msgs::msg::TransformStamped tf;
+      tf.header.frame_id = "world";
+      tf.header.stamp = this->now();
+      tf.child_frame_id = camera_frame;
+      tf.transform.translation.x = 0.0;
+      tf.transform.translation.y = 0.0;
+      tf.transform.translation.z = 0.5;
+      tf_static_broadcaster->sendTransform(tf);
+    }
 
     // DEBUG
 
@@ -373,6 +457,7 @@ public:
     dbg_uncertainty_pubs.resize(num_landmarks);
     dbg_state_position_pubs.resize(num_landmarks);
     dbg_state_velocity_pubs.resize(num_landmarks);
+    dbg_mahal_dist.data.resize(num_landmarks);
 
     dbg_mean_conf_pub =
         this->create_publisher<panda_interfaces::msg::DoubleStamped>(
@@ -381,6 +466,14 @@ public:
     dbg_all_confs_pub =
         this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
             "debug/all_confidences", 10);
+
+    dbg_all_depths_pub =
+        this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
+            "debug/all_depths", 10);
+
+    dbg_all_mahal_dist_pub =
+        this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
+            "debug/all_mahal_dist", 10);
 
     for (int i = 0; i < num_landmarks; ++i) {
       std::string topic_name_position =
@@ -416,7 +509,11 @@ private:
   // Subscribers
   Subscription<Image>::SharedPtr rgb_image_sub;
   Subscription<Image>::SharedPtr depth_image_sub;
-  Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub;
+  Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr rgb_camera_info_sub;
+  Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_sub;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener;
+  std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster;
+  tf2::BufferCore tf_buffer;
 
   // Publishers
   realtime_tools::RealtimePublisher<Image>::SharedPtr skeleton_image_pub{};
@@ -439,17 +536,25 @@ private:
   std::vector<
       rclcpp::Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr>
       dbg_uncertainty_pubs;
+  rclcpp::Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      dbg_all_depths_pub;
+  rclcpp::Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      dbg_all_mahal_dist_pub;
 
   // Image processing
   SkeletonInfer net;
-  std::mutex images_mutex;
+  std::mutex rgb_mutex;
+  std::mutex depth_img_mutex;
   Image::SharedPtr current_rgb_image;
   Image::SharedPtr current_depth_image;
-  sensor_msgs::msg::CameraInfo current_camera_info;
+  sensor_msgs::msg::CameraInfo current_rgb_camera_info;
+  sensor_msgs::msg::CameraInfo current_depth_camera_info;
   const std::string camera_frame = "/camera_link";
   double min_depth, max_depth;
   int num_landmarks;
-  image_geometry::PinholeCameraModel image_geom;
+  image_geometry::PinholeCameraModel rgb_image_geom;
+  image_geometry::PinholeCameraModel depth_image_geom;
+  image_geometry::StereoCameraModel stereo_camera_model;
 
   // Keypoints state variables
   std::optional<Image> skel_image_output;
@@ -458,6 +563,7 @@ private:
 
   TargetState tracking_state = TargetState::NO_PERSON;
   StateTransitionParams transition_params;
+  int MA_window_size;
   DecisionData tracking_decision_data;
   kalman_filt_params<double, 6, 3> kalman_params;
   std::vector<state<double, 6>> filter_state;
@@ -467,62 +573,88 @@ private:
   // Debug
   std::vector<Eigen::Vector3d> dbg_innovations;
   std::vector<Eigen::Matrix<double, 6, 1>> dbg_uncertainties;
+  panda_interfaces::msg::DoubleArrayStamped dbg_mahal_dist;
 
-  cv::Mat create_skel_img(Image background_scene = Image());
+  cv::Mat create_skel_img(std::vector<double> depths,
+                          Image background_scene = Image());
   std::vector<std::optional<geometry_msgs::msg::Point>>
   project_pixels_to_3d(std::vector<double> depths);
   void publish_keypoints_tf();
   void publish_skeleton_markers();
-  std::vector<double> calculate_depths(cv::Mat depth_image);
+  std::vector<double>
+  calculate_depths(cv::Mat depth_image,
+                   std::vector<cv::Point2d> depth_pixels_normalized);
+  std::vector<cv::Point2d> calculate_depth_pixels();
   void kalman_predict(
       const std::vector<std::optional<geometry_msgs::msg::Point>> &points,
       bool init_new = true, bool only_predict = false);
   void debug_print();
 
-  void calc_decision_data(
-      std::vector<std::optional<geometry_msgs::msg::Point>> points) {
-    // Reset current valid keypoints number
-    tracking_decision_data.valid_keypoints = 0;
-    double conf_sum = 0.0;
-    int decision_keypoints = 0;
+  void calc_state_track_data(
+      const std::vector<std::optional<geometry_msgs::msg::Point>> &points) {
 
     for (int i = 0; i < num_landmarks; i++) {
       auto point = points[i];
       auto landmark = landmarks[i];
-      if (landmark.conf > transition_params.hallucination_threshold) {
-        decision_keypoints += 1;
-        conf_sum += landmark.conf;
-      } else {
-        filter_state[i].conf_frames = 0;
-      }
+      auto &current_state = filter_state[i];
+      current_state.confidence_history.push_front(landmark.conf);
+      current_state.calc_ma(MA_window_size);
+
       if (point.has_value() &&
-          landmark.conf > transition_params.confidence_threshold) {
-        filter_state[i].conf_frames += 1;
-        tracking_decision_data.valid_keypoints += 1;
+          current_state.ma_conf >
+              transition_params.single_keypoint_ma_confidence_threshold) {
+        current_state.invalid_keypoint_frames = 0;
+      } else {
+        current_state.invalid_keypoint_frames += 1;
       }
     }
+  }
 
-    tracking_decision_data.mean_confidence = conf_sum / decision_keypoints;
+  void calc_decision_data(
+      std::vector<std::optional<geometry_msgs::msg::Point>> points) {
+    // Reset current valid keypoints number
+    tracking_decision_data.valid_keypoints = 0;
+    double ma_conf_sum = 0.0;
+    int keypoints_above_hallucination = 0;
 
-    if (tracking_decision_data.mean_confidence >=
-        transition_params.confidence_threshold) {
-      tracking_decision_data.valid_frames += 1;
-      tracking_decision_data.non_valid_frames = 0;
-    } else {
-      tracking_decision_data.valid_frames = 0;
-      tracking_decision_data.non_valid_frames += 1;
+    for (int i = 0; i < num_landmarks; i++) {
+      auto point = points[i];
+      const auto &current_state = filter_state[i];
+
+      if (point.has_value() &&
+          current_state.ma_conf >
+              transition_params.single_keypoint_ma_confidence_threshold) {
+        tracking_decision_data.valid_keypoints++;
+      }
+
+      // Calculate a robust mean confidence based on all non-hallucinated points
+      if (point.has_value() &&
+          current_state.ma_conf > transition_params.hallucination_threshold) {
+        ma_conf_sum += current_state.ma_conf;
+        keypoints_above_hallucination++;
+      }
+      // Keeping this if for keypoints that are not at all in image, so are
+      // surely invented
+      // if (current_state.ma_conf > transition_params.hallucination_threshold)
+      // {
+      //   decision_keypoints += 1;
+      // }
+      // if (point.has_value() &&
+      //     current_state.ma_conf >
+      //         transition_params.single_keypoint_ma_confidence_threshold) {
+      //   tracking_decision_data.valid_keypoints += 1;
+      //   ma_conf_sum += current_state.ma_conf;
+      // }
     }
 
-    // RCLCPP_INFO_STREAM(
-    //     this->get_logger(),
-    //     "Decision datas: "
-    //         << "mean_conf = " << tracking_decision_data.mean_confidence
-    //         << ", valid keypoints = " <<
-    //         tracking_decision_data.valid_keypoints
-    //         << ", valid frames = " << tracking_decision_data.valid_frames
-    //         << ", non valid frames = "
-    //         << tracking_decision_data.non_valid_frames);
+    if (keypoints_above_hallucination > 0) {
+      tracking_decision_data.ma_mean_confidence =
+          ma_conf_sum / keypoints_above_hallucination;
+    } else {
+      tracking_decision_data.ma_mean_confidence = 0.0;
+    }
   }
+
   // State transition methods
   void no_person_to_tracked(
       const std::vector<std::optional<geometry_msgs::msg::Point>> &points) {
@@ -530,10 +662,9 @@ private:
     // valid keypoints right now without running the update
     for (int i = 0; i < num_landmarks; i++) {
       auto point = points[i];
-      auto landmark = landmarks[i];
-      if (landmark.conf >= transition_params.confidence_threshold &&
-          point.has_value() &&
-          filter_state[i].conf_frames > transition_params.min_conf_frames) {
+      if (filter_state[i].ma_conf >=
+              transition_params.single_keypoint_ma_confidence_threshold &&
+          point.has_value()) {
         Eigen::Vector<double, 6> state;
         state.setZero();
         state.x() = point->x;
@@ -544,6 +675,30 @@ private:
     }
   }
 };
+
+std::vector<cv::Point2d> SkeletonTracker::calculate_depth_pixels() {
+  auto rgb_width = rgb_image_geom.cameraInfo().width;
+  auto rgb_height = rgb_image_geom.cameraInfo().height;
+  auto depth_width = depth_image_geom.cameraInfo().width;
+  auto depth_height = depth_image_geom.cameraInfo().height;
+  std::vector<cv::Point2d> depth_pixels;
+  for (auto landmark : landmarks) {
+    cv::Point2d rgb_pixel;
+
+    // rgb_pixel.x = landmark.second.x * rgb_width;
+    // rgb_pixel.y = landmark.second.y * rgb_height;
+    // auto rgb_3d_point = rgb_image_geom.projectPixelTo3dRay(rgb_pixel);
+    // cv::Point2d depth_pixel =
+    // depth_image_geom.project3dToPixel(rgb_3d_point); depth_pixel.x =
+    // depth_pixel.x / depth_width; depth_pixel.y = depth_pixel.y /
+    // depth_height; depth_pixels.push_back(depth_pixel);
+
+    rgb_pixel.x = landmark.second.x;
+    rgb_pixel.y = landmark.second.y;
+    depth_pixels.push_back(rgb_pixel);
+  }
+  return depth_pixels;
+}
 
 void SkeletonTracker::debug_print() {
   if (landmarks.empty()) {
@@ -561,7 +716,7 @@ void SkeletonTracker::debug_print() {
 
   auto mean_conf_msg = panda_interfaces::msg::DoubleStamped();
   mean_conf_msg.header.stamp = now;
-  mean_conf_msg.data = tracking_decision_data.mean_confidence;
+  mean_conf_msg.data = tracking_decision_data.ma_mean_confidence;
   dbg_mean_conf_pub->publish(mean_conf_msg);
 
   for (int i = 0; i < num_landmarks; ++i) {
@@ -601,6 +756,8 @@ void SkeletonTracker::debug_print() {
                             dbg_uncertainties[i](4), dbg_uncertainties[i](5)};
     dbg_uncertainty_pubs[i]->publish(uncertainty_msg);
   }
+
+  dbg_all_mahal_dist_pub->publish(dbg_mahal_dist);
 }
 
 // Update the state of the kalman filters if the points are valid (depth is
@@ -614,11 +771,24 @@ void SkeletonTracker::kalman_predict(
   kalman_params.F(0, 3) = dt;
   kalman_params.F(1, 4) = dt;
   kalman_params.F(2, 5) = dt;
+
+  const double mahalanobis_threshold = 6.5;
+
   for (int i = 0; i < num_landmarks; i++) {
     auto point = points[i];
     auto &current_state = filter_state[i];
+    dbg_mahal_dist.data[i] = 0.0;
 
     if (current_state.is_initialized) {
+      if (current_state.invalid_keypoint_frames >
+          transition_params.min_invalid_frames) {
+        // RCLCPP_INFO_STREAM(this->get_logger(),
+        //                    "Deinit state of "
+        //                        << image_constants::coco_keypoints[i]);
+        current_state.deinit();
+        continue;
+      }
+
       // Prediction
       Eigen::Vector<double, 6> pred_state =
           kalman_params.F * current_state.internal_state;
@@ -642,8 +812,20 @@ void SkeletonTracker::kalman_predict(
         z(1) = point->y;
         z(2) = point->z;
         dbg_innovations[i] = z - kalman_params.H * pred_state;
-        current_state.internal_state = pred_state + K_gain * dbg_innovations[i];
-        current_state.P = pred_P - K_gain * S * K_gain.transpose();
+
+        double mahalanobis_squared =
+            dbg_innovations[i].transpose() * S.inverse() * dbg_innovations[i];
+        dbg_mahal_dist.data[i] = mahalanobis_squared;
+        if (mahalanobis_squared < mahalanobis_threshold) {
+          current_state.internal_state =
+              pred_state + K_gain * dbg_innovations[i];
+          current_state.P = pred_P - K_gain * S * K_gain.transpose();
+        } else {
+          current_state.invalid_keypoint_frames++;
+          dbg_innovations[i].setZero();
+          current_state.internal_state = pred_state;
+          current_state.P = pred_P;
+        }
       } else {
         dbg_innovations[i].setZero();
         current_state.internal_state = pred_state;
@@ -652,9 +834,9 @@ void SkeletonTracker::kalman_predict(
     } else {
       // Initialize new keypoint only if requested with init_new
       if (point.has_value() &&
-          landmarks[i].conf >= transition_params.confidence_threshold &&
-          init_new &&
-          filter_state[i].conf_frames > transition_params.min_conf_frames) {
+          current_state.ma_conf >=
+              transition_params.single_keypoint_ma_confidence_threshold &&
+          init_new) {
         Eigen::Vector<double, 6> state;
         state.setZero();
         state(0) = point->x;
@@ -703,7 +885,7 @@ void SkeletonTracker::publish_skeleton_markers() {
       std_msgs::msg::ColorRGBA color;
       // Example: Green for high confidence, Red for low.
       // You can get more fancy with gradients here.
-      float confidence = landmarks.count(i) ? landmarks[i].conf : 0.0f;
+      float confidence = landmarks.count(i) ? filter_state[i].ma_conf : 0.0f;
       color.r = 1.0f - confidence;
       color.g = confidence;
       color.b = 0.0f;
@@ -778,18 +960,37 @@ void SkeletonTracker::publish_keypoints_tf() {
   }
 }
 
-std::vector<double> SkeletonTracker::calculate_depths(cv::Mat depth_image) {
+// Returns depths in meters
+std::vector<double> SkeletonTracker::calculate_depths(
+    cv::Mat depth_image, std::vector<cv::Point2d> depth_pixels_normalized) {
   std::vector<double> depths;
   double height, width;
   height = depth_image.rows;
   width = depth_image.cols;
+  panda_interfaces::msg::DoubleArrayStamped arr;
 
-  RCLCPP_INFO_ONCE(this->get_logger(), "Depth image type: %d",
-                   depth_image.type());
-  for (size_t i = 0; i < landmarks.size(); i++) {
-    depths.push_back(
-        depth_image.at<float>(landmarks[i].y * height, landmarks[i].x * width));
+  for (auto depth_pixel_norm : depth_pixels_normalized) {
+    if (this->get_parameter("use_sim_time").as_bool()) {
+      depths.push_back(depth_image.at<float>(depth_pixel_norm.y * height,
+                                             depth_pixel_norm.x * width));
+    } else {
+
+      // uint16_t depth_raw = depth_image.at<uint16_t>(depth_pixel_norm.y *
+      // height,
+      //                                               depth_pixel_norm.x *
+      //                                               width);
+      // double depth = static_cast<double>(depth_raw) / 1000.0;
+      // depths.push_back(depth);
+      // arr.data.push_back(depth);
+
+      auto depth_median_raw = skeleton_utils::get_median_depth(
+          depth_image, depth_pixel_norm.y * height, depth_pixel_norm.x * width);
+      double depth = static_cast<double>(depth_median_raw) / 1000.0;
+      depths.push_back(depth);
+      arr.data.push_back(depth);
+    }
   }
+  dbg_all_depths_pub->publish(arr);
 
   return depths;
 }
@@ -800,16 +1001,17 @@ SkeletonTracker::project_pixels_to_3d(std::vector<double> depths) {
   std::vector<std::optional<geometry_msgs::msg::Point>> points;
   geometry_msgs::msg::Point point_in_optical_frame;
   geometry_msgs::msg::Point point_in_camera_frame;
-  int height = image_geom.cameraInfo().height;
-  int width = image_geom.cameraInfo().width;
+  int height = rgb_image_geom.cameraInfo().height;
+  int width = rgb_image_geom.cameraInfo().width;
   double depth;
   for (size_t i = 0; i < landmarks.size(); i++) {
     cv::Point2d point;
     point.x = landmarks[i].x * width;
     point.y = landmarks[i].y * height;
-    cv::Point3d point_3d = image_geom.projectPixelTo3dRay(point);
+    cv::Point3d point_3d = rgb_image_geom.projectPixelTo3dRay(point);
     if (depths[i] >= min_depth && depths[i] <= max_depth &&
-        !std::isnan(depths[i])) {
+        !std::isnan(depths[i]) &&
+        landmarks[i].conf > transition_params.hallucination_threshold) {
       depth = depths[i];
       point_in_optical_frame.x = point_3d.x * depth;
       point_in_optical_frame.y = point_3d.y * depth;
@@ -843,22 +1045,30 @@ SkeletonTracker::project_pixels_to_3d(std::vector<double> depths) {
   }
   return points;
 }
-cv::Mat SkeletonTracker::create_skel_img(Image background_scene) {
+cv::Mat SkeletonTracker::create_skel_img(std::vector<double>,
+                                         Image background_scene) {
 
   cv::Mat img = cv_bridge::toCvCopy(background_scene)->image;
   std::map<int, skeleton_utils::landmark> tmp_landmarks = landmarks;
   for (int i = 0; i < num_landmarks; i++) {
-    auto mark_3d = landmark_3d[i];
-    cv::Point3d tmp_point;
-    tmp_point.x = mark_3d.x;
-    tmp_point.y = mark_3d.y;
-    tmp_point.z = mark_3d.z;
-    auto mark = image_geom.project3dToPixel(tmp_point);
-    tmp_landmarks[i].x = mark.x;
-    tmp_landmarks[i].y = mark.y;
+    if (filter_state[i].is_initialized) {
+      auto mark_3d = landmark_3d[i];
+      cv::Point3d tmp_point;
+      // tmp_point.z = mark_3d.x / mark_3d.z;
+      // tmp_point.x = -mark_3d.y / mark_3d.z;
+      // tmp_point.y = -mark_3d.z / mark_3d.z;
+      tmp_point.z = mark_3d.x;
+      tmp_point.x = -mark_3d.y;
+      tmp_point.y = -mark_3d.z;
+      auto mark = rgb_image_geom.project3dToPixel(tmp_point);
+      tmp_landmarks[i].x = mark.x;
+      tmp_landmarks[i].y = mark.y;
+    } else {
+      tmp_landmarks[i].conf = -1.0;
+    }
   }
-  skeleton_utils::draw_skeleton(img, landmarks, image_constants::skeleton, 0.3,
-                                false);
+  skeleton_utils::draw_skeleton(img, tmp_landmarks, image_constants::skeleton,
+                                0.0, true);
 
   return img;
 }

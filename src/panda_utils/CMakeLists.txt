@@ -21,6 +21,7 @@ find_package(pinocchio REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(realtime_tools REQUIRED)
+find_package(image_processing REQUIRED)
 
 include_directories(
   include
@@ -89,6 +90,10 @@ target_link_libraries(clik_cmd_pub robot_model)
 add_executable(demo_node ./examples/demo_node.cpp)
 ament_target_dependencies(demo_node rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs)
 
+add_executable(demo ./examples/demo.cpp)
+ament_target_dependencies(demo rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs image_processing)
+target_link_libraries(demo robot_model)
+
 add_executable(pinocchio_example ./examples/pinocchio_example.cpp)
 ament_target_dependencies(pinocchio_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp)
 target_link_libraries(pinocchio_example robot_model)
@@ -120,6 +125,7 @@ install(TARGETS
   cart_traj
   clik_cmd_pub
   demo_node
+  demo
   pinocchio_example
   inverse_dynamics_controller
   cart_traj_example

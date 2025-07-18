@@ -11,6 +11,7 @@
 
   <depend>rclcpp</depend>
   <depend>panda_interfaces</depend>
+  <depend>image_processing</depend>
   <depend>ament_index_cpp</depend>
   <exec_depend>ros2launch</exec_depend>
   <build_depend>pinocchio</build_depend>

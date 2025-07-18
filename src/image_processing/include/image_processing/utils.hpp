@@ -1,5 +1,7 @@
 #pragma once
+#include "geometry_msgs/msg/point.hpp"
 #include "image_processing/constants.hpp"
+#include <cmath>
 #include <opencv2/core/types.hpp>
 #include <opencv2/opencv.hpp>
 
@@ -10,6 +12,17 @@ struct landmark {
   float y;
   float conf;
 };
+
+struct landmark_3d {
+  geometry_msgs::msg::Point point;
+  double conf;
+};
+
+inline double distance(geometry_msgs::msg::Point p1,
+                       geometry_msgs::msg::Point p2) {
+  return std::sqrt(pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2) +
+                   pow(p1.z - p2.z, 2));
+}
 
 inline cv::Scalar get_gradient_color(float confidence) {
   confidence = std::max(0.0f, std::min(1.0f, confidence));
@@ -74,6 +87,48 @@ inline void draw_skeleton(cv::Mat &image, std::map<int, landmark> landmarks,
       cv::circle(image, point, 3, get_gradient_color(mark.conf), -1);
     }
   }
+}
+
+inline uint16_t get_median_depth(const cv::Mat &depth_image, int u, int v,
+                                 int patch_size = 3) {
+  // --- 1. Boundary check for the center pixel ---
+  if (v < 0 || v >= depth_image.rows || u < 0 || u >= depth_image.cols) {
+    return 0; // The target pixel is outside the image
+  }
+
+  // --- 2. Define the ROI and clamp it to the image dimensions ---
+  const int patch_offset = patch_size / 2;
+  cv::Rect roi(u - patch_offset, v - patch_offset, patch_size, patch_size);
+  roi &= cv::Rect(0, 0, depth_image.cols, depth_image.rows);
+
+  // --- 3. Extract the patch and collect valid (non-zero) depth pixels ---
+  cv::Mat patch = depth_image(roi);
+  std::vector<uint16_t> valid_pixels;
+  valid_pixels.reserve(patch_size * patch_size); // Pre-allocate memory
+
+  for (int r = 0; r < patch.rows; ++r) {
+    for (int c = 0; c < patch.cols; ++c) {
+      uint16_t depth_raw_mm = patch.at<uint16_t>(r, c);
+      // We only consider pixels that have a real depth reading
+      if (depth_raw_mm > 0) {
+        valid_pixels.push_back(depth_raw_mm);
+      }
+    }
+  }
+
+  // --- 4. Determine if the patch is reliable and find the median ---
+  // If less than, say, 25% of the pixels in the patch are valid,
+  // we consider the reading unreliable. This is a tunable heuristic.
+  const size_t min_valid_pixels = (patch_size * patch_size) / 4;
+  if (valid_pixels.size() < min_valid_pixels) {
+    return 0; // Not enough good data in the neighborhood
+  }
+
+  // Find the median element by sorting
+  std::sort(valid_pixels.begin(), valid_pixels.end());
+
+  // The median is the element in the middle of the sorted vector
+  return valid_pixels[valid_pixels.size() / 2];
 }
 
 } // namespace skeleton_utils

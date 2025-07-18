@@ -22,6 +22,7 @@ find_package(tf2_eigen REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(panda_interfaces REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(yolo_msgs REQUIRED)
 
 
 include_directories(
@@ -32,7 +33,7 @@ include_directories(
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../onnxruntime/lib)
 
 add_library(skeleton_infer ./src/skeleton_infer.cpp)
-ament_target_dependencies(skeleton_infer OpenCV ament_index_cpp)
+ament_target_dependencies(skeleton_infer OpenCV ament_index_cpp image_geometry)
 target_link_libraries(skeleton_infer
   onnxruntime
 )
@@ -65,6 +66,13 @@ target_link_libraries(skeleton_track
   skeleton_infer
 )
 
+add_executable(skeleton_track_yolo ./src/skeleton_tracker_yolo.cpp)
+ament_target_dependencies(skeleton_track_yolo OpenCV ament_index_cpp rclcpp sensor_msgs cv_bridge image_geometry realtime_tools tf2 tf2_ros tf2_eigen panda_interfaces visualization_msgs yolo_msgs)
+target_link_libraries(skeleton_track_yolo
+  onnxruntime
+  skeleton_infer
+)
+
 add_executable(image_saver ./examples/image_saver.cpp)
 ament_target_dependencies(image_saver rclcpp std_msgs sensor_msgs cv_bridge image_transport OpenCV message_filters)
 
@@ -75,6 +83,7 @@ install(TARGETS
   infer_image_example
   optical_flow_example
   skeleton_track
+  skeleton_track_yolo
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -82,6 +91,12 @@ install(
   DIRECTORY
     launch/
   DESTINATION share/${PROJECT_NAME}/launch
+)
+
+install(
+  DIRECTORY
+    include/
+  DESTINATION share/${PROJECT_NAME}/include
 )
 
 if(BUILD_TESTING)

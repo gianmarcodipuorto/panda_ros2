@@ -39,7 +39,7 @@ def generate_launch_description():
     camera_urdf = os.path.join(get_package_share_directory('panda_world'),
                                'models', 'camera.urdf')
     default_rviz_config = os.path.join(
-        get_package_share_directory('panda_world'), 'config', 'config.rviz')
+        get_package_share_directory('panda_world'), 'config', 'config2.rviz')
 
     with open(robot_urdf, 'r') as file:
         robot_description = file.read()

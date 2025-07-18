@@ -1,7 +1,10 @@
 #pragma once
 #include "geometry_msgs/msg/pose.hpp"
+#include "geometry_msgs/msg/transform.hpp"
 #include "panda_utils/constants.hpp"
 #include "tf2_eigen/tf2_eigen/tf2_eigen.hpp"
+#include <cmath>
+#include <tf2/LinearMath/Transform.hpp>
 
 namespace indexes {
 
@@ -75,6 +78,14 @@ Eigen::Vector<double, 7> manip_grad(
 } // namespace indexes
 
 namespace geom_utils {
+
+// Calculate the euclidean distance between 2 transforms
+inline double euclidean_distance(tf2::Transform transform_msg) {
+  tf2::Transform transform{};
+  tf2::fromMsg(transform_msg, transform);
+
+  return transform.getOrigin().length();
+}
 
 std::array<double, 16>
 get_transform_matrix(const geometry_msgs::msg::Pose &pose_msg) {

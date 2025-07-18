@@ -32,8 +32,16 @@ const std::vector<std::string> coco_keypoints = {
 
 // Topics
 const std::string rgb_image_topic{"/image_raw"};
+const std::string rgb_camera_info_topic{"/camera_info"};
+
 const std::string depth_image_topic{"/depth/image_raw"};
-const std::string camera_info_topic{"/camera_info"};
+const std::string depth_camera_info_topic{"/depth/camera_info"};
+
+// const std::string depth_image_topic{"/depth_registered/image_rect"};
+// const std::string depth_camera_info_topic{"/depth_registered/camera_info"};
+
+const std::string detection_array_topic{"/yolo/detections_3d"};
+
 const std::string skeleton_image_topic{"/skeleton"};
 const std::string skeleton_marker_array_topic{"/skeleton_array"};
 const int DEFAULT_TOPIC_QOS = 10;
