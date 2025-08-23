@@ -11,6 +11,8 @@
 #include "panda_utils/constants.hpp"
 #include "panda_utils/utils_func.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "std_msgs/msg/color_rgba.hpp"
+#include "std_msgs/msg/u_int8.hpp"
 #include <Eigen/src/Core/PartialReduxEvaluator.h>
 #include <Eigen/src/Geometry/Quaternion.h>
 #include <array>
@@ -69,8 +71,52 @@ enum class SceneState {
   // The robot is in compliance mode: it can be freely moved by the human
   compliance,
   // The human leaves the robot area, allowing the robot to resume task
-  transition_leave_human
+  transition_leave_human,
+
 };
+
+void publish_state(
+    const rclcpp::Publisher<std_msgs::msg::ColorRGBA>::SharedPtr pub,
+    const SceneState &state) {
+
+  std_msgs::msg::ColorRGBA color;
+
+  switch (state) {
+
+  case SceneState::no_state: {
+    color.r = 0.0;
+    color.g = 0.0;
+    color.b = 0.0;
+    break;
+  }
+  case SceneState::task: {
+    color.r = 0.0;
+    color.g = 255.0;
+    color.b = 0.0;
+    break;
+  }
+  case SceneState::transition_human: {
+    color.r = 255.0;
+    color.g = 255.0;
+    color.b = 0.0;
+    break;
+  }
+  case SceneState::compliance: {
+    color.r = 255.0;
+    color.g = 0.0;
+    color.b = 0.0;
+    break;
+  }
+  case SceneState::transition_leave_human: {
+    color.r = 0.0;
+    color.g = 255.0;
+    color.b = 255.0;
+    break;
+  } break;
+  }
+
+  pub->publish(color);
+}
 
 struct human_presence {
   const double MAX_TIME = 1.0;
@@ -278,6 +324,15 @@ int main(int argc, char **argv) {
       main_node->create_publisher<Accel>(
           panda_interface_names::panda_accel_cmd_topic_name,
           panda_interface_names::DEFAULT_TOPIC_QOS);
+
+  rclcpp::Publisher<std_msgs::msg::ColorRGBA>::SharedPtr state_publisher =
+      main_node->create_publisher<std_msgs::msg::ColorRGBA>(
+          panda_interface_names::demo_state_topic_name,
+          panda_interface_names::DEFAULT_TOPIC_QOS);
+
+  auto update_state = [&state_publisher, &state]() {
+    publish_state(state_publisher, state);
+  };
 
   auto send_current_pose_as_cmd = [&pose_cmd_pub, &twist_cmd_pub,
                                    &accel_cmd_pub](const Pose desired_pose) {
@@ -636,9 +691,14 @@ int main(int argc, char **argv) {
     }
   }
 
+  update_state();
+
   while (rclcpp::ok()) {
     switch (state) {
     case SceneState::no_state: {
+
+      update_state();
+
       // Ensure the robot is up and running
       // Going to pose
       RCLCPP_INFO(main_node->get_logger(), "Robot has no known state");
@@ -681,6 +741,9 @@ int main(int argc, char **argv) {
       break;
     }
     case SceneState::task: {
+
+      update_state();
+
       if (!loop_cartesian_traj_handle.has_value()) {
         loop_traj_action_client->async_send_goal(triangle_task_goal,
                                                  loop_cart_traj_options);
@@ -707,6 +770,9 @@ int main(int argc, char **argv) {
       // -> go to transition_human
     }
     case SceneState::transition_human: {
+
+      update_state();
+
       //
       // Stop the task, save the state and enter compliance mode -> go to
       // compliance
@@ -763,6 +829,7 @@ int main(int argc, char **argv) {
       break;
     }
     case SceneState::compliance: {
+      update_state();
       RCLCPP_INFO(main_node->get_logger(), "In compliance state");
       std::this_thread::sleep_for(2s);
       break;
@@ -771,6 +838,7 @@ int main(int argc, char **argv) {
     }
     case SceneState::transition_leave_human: {
 
+      update_state();
       RCLCPP_INFO(main_node->get_logger(), "In transition_leave_human state");
 
       send_current_pose_as_cmd(pose_state.pose);

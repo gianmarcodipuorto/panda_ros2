@@ -1,6 +1,7 @@
 #include "geometry_msgs/msg/wrench.hpp"
 #include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
+#include "panda_interfaces/msg/joints_effort.hpp"
 #include "panda_interfaces/msg/wrench_array.hpp"
 #include <rclcpp/create_timer.hpp>
 #include <rclcpp/logging.hpp>
@@ -34,10 +35,20 @@ public:
               sensor_topic_names[i], 10, wrench_sub_cb);
     }
 
+    auto joints_effort_cb =
+        [this](const panda_interfaces::msg::JointsEffort msg) {
+          joints_effort = msg;
+        };
+
+    joints_effort_sub =
+        this->create_subscription<panda_interfaces::msg::JointsEffort>(
+            panda_effort_cmd_topic_name, 10, joints_effort_cb);
+
     auto wrench_array_pub_cb = [this]() {
       panda_interfaces::msg::JointTorqueMeasureStamped torque_stamped;
       for (size_t i = 0; i < torque_stamped.measures.torque.size(); i++) {
-        torque_stamped.measures.torque[i] = wrenches[i].wrench.torque.z;
+        torque_stamped.measures.torque[i] =
+            wrenches[i].wrench.torque.z - joints_effort.effort_values[i];
       }
       torque_stamped.header.stamp = this->get_clock()->now();
       this->torque_measures_pub->publish(torque_stamped);
@@ -57,7 +68,11 @@ private:
       rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr>
       gz_wrench_stamped_sub;
 
+  rclcpp::Subscription<panda_interfaces::msg::JointsEffort>::SharedPtr
+      joints_effort_sub;
+
   std::vector<geometry_msgs::msg::WrenchStamped> wrenches;
+  panda_interfaces::msg::JointsEffort joints_effort;
   rclcpp::TimerBase::SharedPtr timer;
 
   const std::vector<std::string> sensor_topic_names = {
@@ -68,6 +83,7 @@ private:
   };
 
   const std::string torque_sensor_topic_name{"/tau_sensors"};
+  const std::string panda_effort_cmd_topic_name{"/panda/cmd/effort"};
 };
 
 int main(int argc, char **argv) {

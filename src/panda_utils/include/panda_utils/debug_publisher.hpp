@@ -74,6 +74,9 @@ struct debug_data {
 
   // Pose error (Quaternion as w, x, y, z)
   Eigen::Vector<double, 7> error_pose_vec;
+
+  // Tau external contribute in control law
+  std::optional<Eigen::Vector<double, 6>> h_e;
 };
 
 class DebugPublisher {
@@ -106,6 +109,8 @@ private:
   Publisher<JointsEffort>::SharedPtr y_contribute_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       y_cartesian_contribute_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      tau_external_contribute_debug{};
   Publisher<TwistStamped>::SharedPtr velocity_error_debug{};
   Publisher<PoseStamped>::SharedPtr desired_pose_debug{};
   Publisher<TwistStamped>::SharedPtr desired_velocity_debug{};

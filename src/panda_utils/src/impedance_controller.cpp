@@ -15,6 +15,7 @@
 #include "panda_interfaces/msg/joints_command.hpp"
 #include "panda_interfaces/msg/joints_effort.hpp"
 #include "panda_interfaces/msg/joints_pos.hpp"
+#include "panda_interfaces/srv/joint_contact.hpp"
 #include "panda_interfaces/srv/set_compliance_mode.hpp"
 #include "panda_utils/constants.hpp"
 #include "panda_utils/debug_publisher.hpp"
@@ -42,6 +43,7 @@
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <rcl/time.h>
 #include <rclcpp/clock.hpp>
 #include <rclcpp/logger.hpp>
@@ -53,6 +55,7 @@
 #include <rclcpp/subscription_base.hpp>
 #include <rclcpp/utilities.hpp>
 #include <rclcpp_lifecycle/rclcpp_lifecycle/lifecycle_node.hpp>
+#include <string>
 #include <thread>
 
 template <typename messageT> using Publisher = rclcpp::Publisher<messageT>;
@@ -213,6 +216,12 @@ public:
       desired_accel_vec[5] = msg->angular.z;
     };
 
+    auto set_external_tau_cb = [this](const JointTorqueMeasureStamped msg) {
+      for (int i = 0; i < 7; i++) {
+        extern_tau[i] = msg.measures.torque[i];
+      }
+    };
+
     desired_pose_sub = this->create_subscription<Pose>(
         panda_interface_names::panda_pose_cmd_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS, set_desired_pose);
@@ -224,6 +233,10 @@ public:
     desired_accel_sub = this->create_subscription<Accel>(
         panda_interface_names::panda_accel_cmd_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS, set_desired_accel);
+
+    external_tau_sub = this->create_subscription<JointTorqueMeasureStamped>(
+        panda_interface_names::torque_sensor_topic_name,
+        panda_interface_names::DEFAULT_TOPIC_QOS, set_external_tau_cb);
 
     robot_joint_efforts_pub = this->create_publisher<JointsEffort>(
         panda_interface_names::panda_effort_cmd_topic_name,
@@ -252,6 +265,28 @@ public:
         this->create_service<panda_interfaces::srv::SetComplianceMode>(
             panda_interface_names::set_compliance_mode_service_name,
             compliance_mode_cb);
+
+    auto joint_contact_cb =
+        [this](
+            const panda_interfaces::srv::JointContact_Request::SharedPtr
+                request,
+            panda_interfaces::srv::JointContact_Response::SharedPtr response) {
+          if (request->joint_index > 7) {
+            response->set__success(false);
+          }
+
+          if (!request->contact) {
+            joint_contact_index = std::nullopt;
+          } else {
+            joint_contact_index = request->joint_index;
+          }
+          response->set__success(true);
+        };
+
+    joint_contact_server =
+        this->create_service<panda_interfaces::srv::JointContact>(
+            panda_interface_names::set_joint_contact_service_name,
+            joint_contact_cb);
 
     robot_pose_pub = std::make_shared<
         realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
@@ -813,6 +848,7 @@ private:
   rclcpp::Subscription<Pose>::SharedPtr desired_pose_sub{};
   rclcpp::Subscription<Twist>::SharedPtr desired_twist_sub{};
   rclcpp::Subscription<Accel>::SharedPtr desired_accel_sub{};
+  rclcpp::Subscription<JointTorqueMeasureStamped>::SharedPtr external_tau_sub{};
 
   // Commands publisher
   Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub{};
@@ -824,7 +860,6 @@ private:
       joint_states_pub{};
 
   // DEBUG PUBLISHERS
-  DebugPublisher debug_pub;
   Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr
       min_singular_val_pub{};
   Publisher<PoseStamped>::SharedPtr pose_error_debug{};
@@ -855,15 +890,20 @@ private:
   rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr
       compliance_mode_server;
 
+  rclcpp::Service<panda_interfaces::srv::JointContact>::SharedPtr
+      joint_contact_server;
+
   // Robot related variables
   Robot<7> panda_mine;
   panda::RobotModel panda;
   std::optional<franka::Robot> panda_franka;
   std::optional<franka::Model> panda_franka_model;
+  std::optional<int> joint_contact_index{std::nullopt};
   Eigen::Quaterniond old_quaternion;
 
   std::mutex joint_state_mutex;
   JointState::SharedPtr current_joint_config{nullptr};
+  Eigen::Vector<double, 7> extern_tau;
 
   std::function<franka::Torques(const franka::RobotState &, franka::Duration)>
       robot_control_callback;
@@ -1132,6 +1172,8 @@ private:
     joint_min_limits = panda.getModel().lowerPositionLimit;
     joint_max_limits = panda.getModel().upperPositionLimit;
   }
+
+  DebugPublisher debug_pub;
 };
 
 void ImpedanceController::control() {
@@ -1139,6 +1181,7 @@ void ImpedanceController::control() {
 
   Eigen::Vector<double, 7> non_linear_effects;
   Eigen::Vector<double, 7> control_input;
+  Eigen::Vector<double, 6> h_e;
   Eigen::VectorXd gravity;
   Eigen::Vector<double, 7> y;
   Eigen::Vector<double, 6> y_cartesian;
@@ -1306,7 +1349,12 @@ void ImpedanceController::control() {
 
     // Calculate quantities for control
     //
-    jacobian = panda.getGeometricalJacobian(frame_id_name);
+    if (compliance_mode.load() && joint_contact_index.has_value()) {
+      jacobian = panda.getGeometricalJacobian(
+          "fr3_joint" + std::to_string(joint_contact_index.value()));
+    } else {
+      jacobian = panda.getGeometricalJacobian(frame_id_name);
+    }
 
     // Calculate jacobian SVD
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU |
@@ -1354,14 +1402,23 @@ void ImpedanceController::control() {
       std::lock_guard<std::mutex> lock(desired_accel_mutex);
       if (compliance_mode.load()) {
 
+        if (joint_contact_index.has_value()) {
+          h_e = jacobian_pinv.transpose() * extern_tau;
+        } else {
+          h_e = h_e.setZero();
+        }
+
         y = jacobian_pinv * MD_1 *
             (
 
-                -KD * current_twist - panda.computeHessianTimesQDot(
-                                          current_joints_config_vec,
-                                          current_joints_speed, frame_id_name)
+                -KD * current_twist -
+                panda.computeHessianTimesQDot(current_joints_config_vec,
+                                              current_joints_speed,
+                                              frame_id_name) -
+                h_e
 
             );
+        control_input = mass_matrix * y + non_linear_effects - gravity;
       } else {
         y_cartesian =
             MD_1 *
@@ -1371,10 +1428,9 @@ void ImpedanceController::control() {
                                                 frame_id_name));
 
         y = jacobian_pinv * y_cartesian;
+        control_input = mass_matrix * y + non_linear_effects - gravity;
       }
     }
-
-    control_input = mass_matrix * y + non_linear_effects - gravity;
 
     // control_input =
     //     mass_matrix * y + non_linear_effects - gravity +
