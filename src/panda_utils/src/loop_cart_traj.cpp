@@ -154,17 +154,18 @@ private:
 
   void execute(const std::shared_ptr<GoalHandleLoopMove> goal_handle) {
     RCLCPP_INFO(this->get_logger(), "Executing goal");
-    if (realtime_tools::has_realtime_kernel()) {
+    if (realtime_tools::has_realtime_kernel() &&
+        !this->get_parameter("use_sim_time").as_bool()) {
       if (!realtime_tools::configure_sched_fifo(98)) {
         RCLCPP_WARN(this->get_logger(),
                     "Execute thread: Could not set SCHED_FIFO."
                     " Running with default scheduler.");
-
       } else {
         RCLCPP_INFO(this->get_logger(),
                     "Execute thread: Set SCHED_FIFO priority.");
       }
-
+    } else if (this->get_parameter("use_sim_time").as_bool()) {
+      RCLCPP_INFO(this->get_logger(), "Simulation: realtime not requested");
     } else {
       RCLCPP_WARN(this->get_logger(),
                   "Execute thread: No real-time kernel detected.");
@@ -377,11 +378,16 @@ int main(int argc, char **argv) {
   if (!realtime_tools::has_realtime_kernel()) {
     RCLCPP_ERROR(node->get_logger(), "No real time kernel");
   }
-  if (!realtime_tools::configure_sched_fifo(98)) {
-    RCLCPP_ERROR(node->get_logger(),
-                 "Couldn't configure real time priority for current node");
+  if (!node->get_parameter("use_sim_time").as_bool()) {
+
+    if (!realtime_tools::configure_sched_fifo(98)) {
+      RCLCPP_ERROR(node->get_logger(),
+                   "Couldn't configure real time priority for current node");
+    } else {
+      RCLCPP_INFO(node->get_logger(), "Set real time priority");
+    }
   } else {
-    RCLCPP_INFO(node->get_logger(), "Set real time priority");
+    RCLCPP_INFO(node->get_logger(), "Simulation: realtime not requested");
   }
 
   rclcpp::spin(node);

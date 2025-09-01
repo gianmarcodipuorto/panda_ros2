@@ -4,6 +4,7 @@
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "panda_interfaces/srv/wrist_contact.hpp"
 #include "panda_utils/constants.hpp"
+#include "panda_utils/utils_func.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "tf2_eigen/tf2_eigen/tf2_eigen.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -254,6 +255,33 @@ private:
 
           prev_abs_tf = current_abs_tf;
           prev_frame_name = child_link_name;
+        }
+
+        // Printing value of distance between wrist and end effector
+        try {
+          auto left_link8 = tf_buffer->lookupTransform(
+              "fr3_link8", "left_wrist", tf2::TimePointZero);
+          auto dist = geom_utils::distance(left_link8);
+          RCLCPP_INFO_STREAM(this->get_logger(),
+                             "Distance from left wrist to EE: " << dist);
+
+        } catch (const tf2::TransformException &ex) {
+          RCLCPP_WARN_THROTTLE(
+              get_logger(), *this->get_clock(), 1000,
+              "Could not transform fr3_link8 to left wrist: %s", ex.what());
+        }
+
+        try {
+          auto right_link8 = tf_buffer->lookupTransform(
+              "fr3_link8", "right_wrist", tf2::TimePointZero);
+          auto dist = geom_utils::distance(right_link8);
+          RCLCPP_INFO_STREAM(this->get_logger(),
+                             "Distance from right wrist to EE: " << dist);
+
+        } catch (const tf2::TransformException &ex) {
+          RCLCPP_WARN_THROTTLE(
+              get_logger(), *this->get_clock(), 1000,
+              "Could not transform fr3_link8 to right wrist: %s", ex.what());
         }
 
         // If a wrist contact frame is set, publish its transform relative to

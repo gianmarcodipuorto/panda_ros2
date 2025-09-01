@@ -16,7 +16,5 @@ ament_target_dependencies(color_app rclcpp std_msgs)
 install(TARGETS color_app
   RUNTIME DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
-
 ament_package()
 

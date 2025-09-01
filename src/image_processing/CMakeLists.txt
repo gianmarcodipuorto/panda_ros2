@@ -28,50 +28,18 @@ find_package(tf2_geometry_msgs REQUIRED)
 
 include_directories(
   include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../onnxruntime/include
-)
-
-link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../onnxruntime/lib)
-
-add_library(skeleton_infer ./src/skeleton_infer.cpp)
-ament_target_dependencies(skeleton_infer OpenCV ament_index_cpp image_geometry)
-target_link_libraries(skeleton_infer
-  onnxruntime
-)
-
-add_executable(onnxruntime_example ./examples/onnx_example.cpp)
-ament_target_dependencies(onnxruntime_example ament_index_cpp)
-target_link_libraries(onnxruntime_example
-  onnxruntime
 )
 
 
-add_executable(infer_image_example ./examples/onnx_image_example.cpp)
-ament_target_dependencies(infer_image_example OpenCV ament_index_cpp)
-target_link_libraries(infer_image_example
-  onnxruntime
-  skeleton_infer
-)
 
-add_executable(optical_flow_example ./examples/optical_flow_example.cpp)
-ament_target_dependencies(optical_flow_example OpenCV ament_index_cpp)
-target_link_libraries(optical_flow_example
-  onnxruntime
-  skeleton_infer
-)
 
-add_executable(skeleton_track ./src/skeleton_track.cpp)
-ament_target_dependencies(skeleton_track OpenCV ament_index_cpp rclcpp sensor_msgs cv_bridge image_geometry realtime_tools tf2 tf2_ros tf2_eigen panda_interfaces visualization_msgs)
-target_link_libraries(skeleton_track
-  onnxruntime
-  skeleton_infer
-)
+
+
+
 
 add_executable(skeleton_track_yolo ./src/skeleton_tracker_yolo.cpp)
 ament_target_dependencies(skeleton_track_yolo OpenCV ament_index_cpp rclcpp sensor_msgs cv_bridge image_geometry realtime_tools tf2 tf2_ros tf2_eigen panda_interfaces visualization_msgs yolo_msgs tf2_geometry_msgs)
 target_link_libraries(skeleton_track_yolo
-  onnxruntime
-  skeleton_infer
 )
 
 add_executable(image_saver ./examples/image_saver.cpp)
@@ -80,10 +48,6 @@ ament_target_dependencies(image_saver rclcpp std_msgs sensor_msgs cv_bridge imag
 
 install(TARGETS
   image_saver
-  onnxruntime_example
-  infer_image_example
-  optical_flow_example
-  skeleton_track
   skeleton_track_yolo
   DESTINATION lib/${PROJECT_NAME}
 )

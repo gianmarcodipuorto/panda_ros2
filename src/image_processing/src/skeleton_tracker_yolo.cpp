@@ -3,7 +3,6 @@
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/vector3_stamped.hpp"
 #include "image_processing/constants.hpp"
-#include "image_processing/skeleton_infer.hpp"
 #include "image_processing/utils.hpp"
 #include "panda_interfaces/msg/body_lengths.hpp"
 #include "panda_interfaces/msg/double_array_stamped.hpp"
