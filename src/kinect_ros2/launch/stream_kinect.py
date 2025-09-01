@@ -11,13 +11,13 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 'world_to_kinect_depth',
                 default_value='[0.0, 0.0, 2.1, -1.57, 0.0, -1.57, world, kinect_depth]',
-                description='Base to world transform'
+                description='World to kinect transform'
             ),
-            DeclareLaunchArgument(
-                'depth_to_rgb',
-                default_value='[-0.0254, -0.00013, -0.00218,-1.57, 0.0, -1.57, world, kinect_depth]',
-                description='Base to world transform'
-            ),
+            # DeclareLaunchArgument(
+            #     'depth_to_rgb',
+            #     default_value='[-0.0254, -0.00013, -0.00218,-1.57, 0.0, -1.57, world, kinect_depth]',
+            #     description='Base to world transform'
+            # ),
             Node(
                 package="kinect_ros2",
                 executable="kinect_ros2_node",
@@ -45,8 +45,12 @@ def generate_launch_description():
                 executable='static_transform_publisher',
                 name='static_tf_world_rgb',
                 arguments=[
-                    '0.0', '0.0', '2.1',        # x y z
-                    '-1.57', '0.0', '-1.57',        # roll pitch yaw (in radians)
+                    # '0.0', '0.0', '2.1',        # x y z
+                    '-0.725', '-0.265', '2.13',        # x y z
+                    # '-1.57', '0.0', '-1.57',        # roll pitch yaw (in radians)
+                    # '0.857', '0.3613', '-0.3875',        # roll pitch yaw (in radians)
+                    # '-0.7838', '0.0003', '-2.093', working one
+                    '-0.784650', '0.000272', '-1.9190',
                     'world', 'kinect_depth'  # parent_frame child_frame
                 ]
             ),
@@ -55,8 +59,8 @@ def generate_launch_description():
                 executable='static_transform_publisher',
                 name='static_tf_depth_to_rgb',
                 arguments=[
-                    '-0.0254', '-0.00013', '-0.00218',
-                    '0', '0', '0',
+                    '-0.025518', '0.0005438', '0.0018004',
+                    '0.0025', '-0.0102', '-0.0018',
                     'kinect_depth', 'kinect_rgb'
                 ]
             ),

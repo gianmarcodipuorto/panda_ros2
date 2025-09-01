@@ -22,6 +22,9 @@ public:
               std::string wrist_contact_topic_name)
       : state_topic_name(state_topic_name),
         wrist_contact_topic_name(wrist_contact_topic_name) {
+
+    this->resize(QSize(400.0, 500.0));
+
     QVBoxLayout *main_layout = new QVBoxLayout(this);
     main_layout->setContentsMargins(0, 0, 0, 0); // Remove margins
     main_layout->setSpacing(0); // Remove spacing between widgets

@@ -329,26 +329,29 @@ class Detect3DNode(LifecycleNode):
         u = np.array(keypoints_2d[:, 1]).clip(0, depth_info.height - 1)
         v = np.array(keypoints_2d[:, 0]).clip(0, depth_info.width - 1)
 
-        # neighborhood_size = 5
-        # half_size = neighborhood_size // 2
-        # padded_depth = np.pad(depth_image, half_size, mode='constant', constant_values=0)
-        # shape = padded_depth.shape + (neighborhood_size, neighborhood_size)
-        # strides = padded_depth.strides * 2
-        # neighborhoods_view = np.lib.stride_tricks.as_strided(
-        #     padded_depth, shape=shape, strides=strides)
-        # neighborhoods = neighborhoods_view[u, v]
-        # z = np.zeros(len(u))  # Initialize the output array
-        # for i, neighborhood in enumerate(neighborhoods):
-        #     valid_pixels = neighborhood[neighborhood > 0]
-        #
-        #     if valid_pixels.size > 0:
-        #         # If there are any valid pixels, compute their median
-        #         z[i] = np.median(valid_pixels)
-        #     else:
-        #         # Otherwise, the depth is invalid (or 0)
-        #         z[i] = 0
+        # median value of box surronding 2D pixel in depth image
+        neighborhood_size = 5
+        half_size = neighborhood_size // 2
+        padded_depth = np.pad(depth_image, half_size, mode='constant', constant_values=0)
+        shape = padded_depth.shape + (neighborhood_size, neighborhood_size)
+        strides = padded_depth.strides * 2
+        neighborhoods_view = np.lib.stride_tricks.as_strided(
+            padded_depth, shape=shape, strides=strides)
+        neighborhoods = neighborhoods_view[u, v]
+        z = np.zeros(len(u))  # Initialize the output array
+        for i, neighborhood in enumerate(neighborhoods):
+            valid_pixels = neighborhood[neighborhood > 0]
 
-        z = depth_image[u, v]
+            if valid_pixels.size > 0:
+                # If there are any valid pixels, compute their median
+                z[i] = np.median(valid_pixels)
+            else:
+                # Otherwise, the depth is invalid (or 0)
+                z[i] = 0
+
+        # actual value of 2D pixel in depth image
+        # z = depth_image[u, v]
+
         k = depth_info.k
         px, py, fx, fy = k[2], k[5], k[0], k[4]
         x = z * (v - px) / fx

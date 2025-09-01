@@ -83,7 +83,18 @@ template <typename type, int STATES, int OUTPUTS> struct kalman_filt_params {
   Eigen::Matrix<type, STATES, STATES> F;
   // Output matrix
   Eigen::Matrix<type, OUTPUTS, STATES> H;
+
+  void compute_Q(double delta_time);
 };
+
+template <>
+void kalman_filt_params<double, 6, 3>::compute_Q(double delta_time) {
+  auto ident3_3 = Eigen::Matrix<double, 3, 3>::Identity();
+  this->Q.block<3, 3>(0, 0) = (1.0 / 4) * pow(delta_time, 4) * ident3_3;
+  this->Q.block<3, 3>(0, 3) = (1.0 / 2) * pow(delta_time, 3) * ident3_3;
+  this->Q.block<3, 3>(3, 0) = (1.0 / 2) * pow(delta_time, 3) * ident3_3;
+  this->Q.block<3, 3>(3, 3) = 1 * pow(delta_time, 2) * ident3_3;
+}
 
 template <typename type, int STATES> struct state {
   Eigen::Vector<type, STATES> internal_state;
@@ -211,8 +222,12 @@ public:
     RCLCPP_INFO_STREAM(this->get_logger(),
                        "Initializing kalman filter variables");
     // Initializing kalman filter variables
-    kalman_params.Q.setIdentity();
-    kalman_params.Q *= this->get_parameter("process_noise").as_double();
+    //
+
+    // kalman_params.Q.setIdentity();
+    // kalman_params.Q *= this->get_parameter("process_noise").as_double();
+
+    kalman_params.Q.setZero();
 
     kalman_params.R.setIdentity();
     kalman_params.R *= this->get_parameter("measurement_noise").as_double();
@@ -336,7 +351,7 @@ public:
             this->publish_skeleton_markers(this->shared_keypoints,
                                            !use_filtering);
             this->publish_keypoints_tf(this->shared_keypoints, !use_filtering);
-            this->publish_body_lengths(this->shared_keypoints, !use_filtering);
+            // this->publish_body_lengths(this->shared_keypoints, !use_filtering);
           }
           if (debug) {
             debug_print(this->shared_keypoints);
@@ -585,6 +600,8 @@ private:
           current_state.invalid_keypoint_frames = 0;
         }
       } else {
+        // Else if the keypoint is not in the map, increase the invalid frame
+        // count; increased when keypoint out of depth or (0, 0, 0)
         current_state.invalid_keypoint_frames += 1;
       }
     }
@@ -867,6 +884,8 @@ void SkeletonTrackerYolo::kalman_predict(
   kalman_params.F(0, 3) = dt;
   kalman_params.F(1, 4) = dt;
   kalman_params.F(2, 5) = dt;
+  // Compute Q based on time passed
+  kalman_params.compute_Q(dt);
 
   const double mahalanobis_threshold = 6.5;
 
@@ -1218,7 +1237,8 @@ void SkeletonTrackerYolo::publish_body_lengths(
       }
     }
   }
-  if (filter_state[9].is_initialized && filter_state[10].is_initialized) {
+  if (filter_state[9].is_initialized && filter_state[10].is_initialized &&
+      !print_keypoints) {
 
     geometry_msgs::msg::Point p_start = landmark_3d[9];
     geometry_msgs::msg::Point p_end = landmark_3d[10];

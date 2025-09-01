@@ -126,6 +126,10 @@ add_executable(publish_franks_tfs ./examples/hand_estimation.cpp)
 ament_target_dependencies(publish_franks_tfs rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs rclcpp_lifecycle tf2_geometry_msgs ament_index_cpp)
 target_link_libraries(publish_franks_tfs franka)
 
+add_executable(estimate_external_forces ./examples/estimate_external_forces.cpp)
+ament_target_dependencies(estimate_external_forces rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs rclcpp_lifecycle tf2_geometry_msgs ament_index_cpp)
+target_link_libraries(estimate_external_forces franka)
+
 add_executable(joint_traj_test ./examples/joint_trajectory_test.cpp)
 ament_target_dependencies(joint_traj_test rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 
@@ -148,6 +152,7 @@ install(TARGETS
   impedance_controller
   joint_traj_test
   publish_franks_tfs
+  estimate_external_forces
   DESTINATION lib/${PROJECT_NAME}
 )
 
