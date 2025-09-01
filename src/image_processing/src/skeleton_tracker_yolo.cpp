@@ -172,7 +172,7 @@ struct StateTransitionParams {
   double hallucination_threshold = 0.25;
   // Minimum number of frames with point != null to consider a keypoint
   // recognized
-  int min_invalid_frames = 30;
+  int min_invalid_frames = 15;
 };
 
 struct DecisionData {

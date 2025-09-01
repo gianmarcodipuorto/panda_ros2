@@ -1621,9 +1621,9 @@ void ImpedanceController::control() {
     //     mass_matrix * y + non_linear_effects - gravity +
     //     task_gain * tau_projector * (manip_grad(current_joints_config_vec));
 
-    // control_input = mass_matrix * y + non_linear_effects - gravity +
-    //                 task_gain * tau_projector *
-    //                     (-joint_limit_index_grad(current_joints_config_vec));
+    control_input = mass_matrix * y + non_linear_effects + extern_tau - gravity +
+                    task_gain * tau_projector *
+                        (-joint_limit_index_grad(current_joints_config_vec));
 
     // Clamping control input
     //
