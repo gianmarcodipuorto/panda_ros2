@@ -18,7 +18,7 @@ public:
 
     for (const auto &name : panda_interface_names::bridge_pos_cmd_topic_names) {
       auto pub = this->create_publisher<std_msgs::msg::Float64>(
-          name, panda_interface_names::DEFAULT_TOPIC_QOS);
+          name, panda_interface_names::DEFAULT_TOPIC_QOS());
       joints_cmd_pubs.push_back(pub);
     }
 
@@ -39,7 +39,7 @@ public:
     joints_pos_sub =
         this->create_subscription<panda_interfaces::msg::JointsPos>(
             panda_interface_names::panda_pos_cmd_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS, send_joints_pos);
+            panda_interface_names::DEFAULT_TOPIC_QOS(), send_joints_pos);
 
     RCLCPP_INFO_STREAM(this->get_logger(),
                        "Created subscriber to "

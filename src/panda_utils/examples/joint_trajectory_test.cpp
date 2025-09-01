@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
   rclcpp::Publisher<panda_interfaces::msg::JointsCommand>::SharedPtr
       joint_cmd_pub =
           node.create_publisher<panda_interfaces::msg::JointsCommand>(
-              "/test/joint_traj", panda_interface_names::DEFAULT_TOPIC_QOS);
+              "/test/joint_traj", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   rclcpp::Time t0 = node.get_clock()->now();
   rclcpp::Duration t = rclcpp::Duration(0, 0);

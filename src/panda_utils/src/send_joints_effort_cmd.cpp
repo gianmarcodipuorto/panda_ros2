@@ -35,7 +35,7 @@ public:
     for (const auto &name :
          panda_interface_names::bridge_effort_cmd_topic_names) {
       auto pub = this->create_publisher<std_msgs::msg::Float64>(
-          name, panda_interface_names::DEFAULT_TOPIC_QOS);
+          name, panda_interface_names::DEFAULT_TOPIC_QOS());
       joints_effort_pubs.push_back(pub);
     }
 
@@ -75,7 +75,7 @@ public:
     joints_effort_sub =
         this->create_subscription<panda_interfaces::msg::JointsEffort>(
             panda_interface_names::panda_effort_cmd_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS, save_joints_effort);
+            panda_interface_names::DEFAULT_TOPIC_QOS(), save_joints_effort);
 
     RCLCPP_INFO_STREAM(
         this->get_logger(),

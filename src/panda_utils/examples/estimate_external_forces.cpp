@@ -85,8 +85,10 @@ compute_jacob_pseudoinv(const Eigen::Matrix<double, 6, 7> &jacobian,
 
 class ExternalForceEstimator : public rclcpp_lifecycle::LifecycleNode {
 public:
-  ExternalForceEstimator()
-      : rclcpp_lifecycle::LifecycleNode("wrist_estimation_node") {
+  ExternalForceEstimator(std::shared_ptr<franka::Robot> robot = nullptr)
+
+      : rclcpp_lifecycle::LifecycleNode("wrist_estimation_node"),
+        panda_franka(robot) {
     this->declare_parameter<std::string>("robot_ip", "192.168.1.0");
 
     tf_buffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -95,59 +97,51 @@ public:
 
     wrist_contact_index_pub = this->create_publisher<std_msgs::msg::String>(
         panda_interface_names::wrist_contact_index_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
+
+    auto wrist_contact_index_cb = [this](const std_msgs::msg::String msg) {
+      if (!msg.data.empty()) {
+        wrist_contact_frame = msg.data;
+      } else {
+        wrist_contact_frame = std::nullopt;
+      }
+    };
+
+    wrist_contact_index_sub = this->create_subscription<std_msgs::msg::String>(
+        panda_interface_names::wrist_contact_index_topic_name,
+        panda_interface_names::DEFAULT_TOPIC_QOS(), wrist_contact_index_cb);
 
     tau_external_contribute_debug =
         this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
             "debug/cmd/tau_ext_contribute",
-            panda_interface_names::DEFAULT_TOPIC_QOS);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     external_forces_contribute_debug =
         this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
             "debug/cmd/external_forces_contribute",
-            panda_interface_names::DEFAULT_TOPIC_QOS);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     external_forces_contribute_calculated_debug =
         this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
             "debug/cmd/external_forces_contribute_calculated",
-            panda_interface_names::DEFAULT_TOPIC_QOS);
-
-    auto wrist_contact_cb =
-        [this](
-            const panda_interfaces::srv::WristContact_Request::SharedPtr
-                request,
-            panda_interfaces::srv::WristContact_Response::SharedPtr response) {
-          std_msgs::msg::String wrist;
-          if (!request->contact) {
-            wrist_contact_frame = std::nullopt;
-            wrist.data = "";
-            RCLCPP_INFO_STREAM(this->get_logger(),
-                               "Currently unset wrist contact");
-          } else {
-            wrist_contact_frame = std::string(request->wrist.data);
-            wrist.data = request->wrist.data;
-            RCLCPP_INFO_STREAM(this->get_logger(),
-                               "Currently set wrist in touch to "
-                                   << wrist.data);
-          }
-          wrist_contact_index_pub->publish(wrist);
-          response->set__success(true);
-        };
-
-    wrist_contact_server =
-        this->create_service<panda_interfaces::srv::WristContact>(
-            panda_interface_names::set_wrist_contact_service_name,
-            wrist_contact_cb);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
   }
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
     std::string robot_ip = this->get_parameter("robot_ip").as_string();
 
     RCLCPP_INFO_STREAM(get_logger(), "Connecting to robot at IP: " << robot_ip);
-
+    double load = 0.553455;
+    std::array F_x_Cload{-0.010328, 0.000068, 0.148159};
+    std::array load_inertia{0.02001,        0.000006527121, -0.0004590,
+                            0.000006527121, 0.01936,        0.000003371038,
+                            -0.0004590,     0.000003371038, 0.002245};
     try {
-      panda_franka = std::make_unique<franka::Robot>(robot_ip);
-      RCLCPP_INFO(get_logger(), "Franka robot and model initialized.");
+      if (!panda_franka) {
+        panda_franka = std::make_shared<franka::Robot>(robot_ip);
+      }
+      panda_franka->setLoad(load, F_x_Cload, load_inertia);
+      RCLCPP_INFO(get_logger(), "Franka robot initialized.");
     } catch (const franka::Exception &e) {
       RCLCPP_ERROR_STREAM(get_logger(),
                           "Failed to connect to Franka robot: " << e.what());
@@ -260,7 +254,7 @@ private:
               arr.data[i] = current_state.O_F_ext_hat_K[i];
             }
             external_forces_contribute_calculated_debug->publish(arr);
-            
+
             // Publishing external forces
             arr.data.resize(h_e.size());
             for (int i = 0; i < h_e.size(); i++) {
@@ -290,7 +284,7 @@ private:
     RCLCPP_INFO(get_logger(), "TF publish loop stopped.");
   }
 
-  std::unique_ptr<franka::Robot> panda_franka;
+  std::shared_ptr<franka::Robot> panda_franka;
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener;
@@ -302,8 +296,9 @@ private:
   std::string EE_frame = "fr3_link8";
 
   std::optional<std::string> wrist_contact_frame{std::nullopt};
-  rclcpp::Service<panda_interfaces::srv::WristContact>::SharedPtr
-      wrist_contact_server;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr
+      wrist_contact_index_sub;
+
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr wrist_contact_index_pub;
   rclcpp::Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       tau_external_contribute_debug{};

@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
   auto joint_cmd_pub =
       node->create_publisher<panda_interfaces::msg::JointsCommand>(
           panda_interface_names::panda_joint_cmd_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   auto joint_traj_action_client = rclcpp_action::create_client<JointTraj>(
       node, panda_interface_names::panda_traj_move_action_name);

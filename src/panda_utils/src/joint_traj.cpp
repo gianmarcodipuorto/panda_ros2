@@ -75,13 +75,13 @@ public:
 
     joint_state_sub = this->create_subscription<JointState>(
         panda_interface_names::joint_state_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, save_joints_state);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), save_joints_state);
 
     cmd_pos_pub = std::make_shared<realtime_tools::RealtimePublisher<
         panda_interfaces::msg::JointsCommand>>(
         this->create_publisher<panda_interfaces::msg::JointsCommand>(
             panda_interface_names::panda_joint_cmd_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS));
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
 
     auto handle_goal = [this](const rclcpp_action::GoalUUID uuid,
                               std::shared_ptr<const TrajMove::Goal> goal) {

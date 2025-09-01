@@ -210,7 +210,7 @@ public:
 
     robot_joint_states_sub = this->create_subscription<JointState>(
         panda_interface_names::joint_state_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_joint_state);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_joint_state);
 
     auto set_desired_pose = [this](const Pose::SharedPtr msg) {
       RCLCPP_DEBUG_STREAM(this->get_logger(), "Received desired pose");
@@ -248,23 +248,23 @@ public:
 
     desired_pose_sub = this->create_subscription<Pose>(
         panda_interface_names::panda_pose_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_desired_pose);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_pose);
 
     desired_twist_sub = this->create_subscription<Twist>(
         panda_interface_names::panda_twist_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_desired_twist);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_twist);
 
     desired_accel_sub = this->create_subscription<Accel>(
         panda_interface_names::panda_accel_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_desired_accel);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_accel);
 
     external_tau_sub = this->create_subscription<JointTorqueMeasureStamped>(
         panda_interface_names::torque_sensor_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_external_tau_cb);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_external_tau_cb);
 
     robot_joint_efforts_pub = this->create_publisher<JointsEffort>(
         panda_interface_names::panda_effort_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     // Compliance mode Service
 
@@ -320,87 +320,87 @@ public:
 
     wrist_contact_index_pub = this->create_publisher<std_msgs::msg::String>(
         panda_interface_names::wrist_contact_index_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     robot_pose_pub = std::make_shared<
         realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
         this->create_publisher<geometry_msgs::msg::PoseStamped>(
             panda_interface_names::panda_pose_state_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS));
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
 
     joint_states_pub =
         std::make_shared<realtime_tools::RealtimePublisher<JointState>>(
             this->create_publisher<JointState>(
                 panda_interface_names::joint_state_topic_name,
-                panda_interface_names::DEFAULT_TOPIC_QOS));
+                panda_interface_names::DEFAULT_TOPIC_QOS()));
 
     min_singular_val_pub =
         this->create_publisher<panda_interfaces::msg::DoubleStamped>(
             panda_interface_names::min_singular_value_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     // DEBUGGING
     //
 
     robot_joint_efforts_pub_debug = this->create_publisher<JointsEffort>(
         "debug/cmd/effort_no_gravity",
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     gravity_contribute_debug = this->create_publisher<JointsEffort>(
-        "debug/cmd/gravity", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/cmd/gravity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     pose_error_debug = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-        "debug/error/pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/error/pose", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     velocity_error_debug = this->create_publisher<TwistStamped>(
-        "debug/error/velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/error/velocity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     desired_pose_debug = this->create_publisher<PoseStamped>(
-        "debug/desired_pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/desired_pose", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     desired_velocity_debug = this->create_publisher<TwistStamped>(
-        "debug/desired_velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/desired_velocity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     desired_acceleration_debug = this->create_publisher<AccelStamped>(
-        "debug/desired_acceleration", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/desired_acceleration", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     current_pose_debug = this->create_publisher<PoseStamped>(
-        "debug/current_pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/current_pose", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     current_velocity_debug = this->create_publisher<TwistStamped>(
-        "debug/current_velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/current_velocity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     y_contribute_debug = this->create_publisher<JointsEffort>(
-        "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     y_cartesian_contribute_debug =
         this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
             "debug/cmd/y_cartesian_contribute",
-            panda_interface_names::DEFAULT_TOPIC_QOS);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     lamda_dls_debug =
         this->create_publisher<panda_interfaces::msg::DoubleStamped>(
-            "debug/lambda", panda_interface_names::DEFAULT_TOPIC_QOS);
+            "debug/lambda", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     manipulability_index_debug =
         this->create_publisher<panda_interfaces::msg::DoubleStamped>(
             "debug/manipulability_index",
-            panda_interface_names::DEFAULT_TOPIC_QOS);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     manipulability_index_grad_debug =
         this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
             "debug/manipulability_index_grad",
-            panda_interface_names::DEFAULT_TOPIC_QOS);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     joint_limits_index_debug =
         this->create_publisher<panda_interfaces::msg::DoubleStamped>(
             "debug/joint_limits_index",
-            panda_interface_names::DEFAULT_TOPIC_QOS);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     joint_limits_index_grad_debug =
         this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
             "debug/joint_limits_index_grad",
-            panda_interface_names::DEFAULT_TOPIC_QOS);
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     tf_buffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener =
@@ -505,7 +505,10 @@ public:
         Eigen::Matrix<double, 6, 7> jacobian;
         if (compliance_mode.load() && EE_to_K_transform.has_value()) {
           // I have to get Kstiffness frame pose if also EE_to_K has value
-          panda_franka->setK(EE_to_K_transform.value());
+          try {
+            panda_franka->setK(EE_to_K_transform.value());
+          } catch (const franka::Exception &ex) {}
+
           current_pose = get_pose(
               panda_franka_model->pose(franka::Frame::kStiffness, state));
           jacobian = get_jacobian(panda_franka_model->zeroJacobian(

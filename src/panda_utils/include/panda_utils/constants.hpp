@@ -1,6 +1,7 @@
 #pragma once
 
 #include "robot.hpp"
+#include <rclcpp/qos.hpp>
 #include <string>
 
 const DHParameters PANDA_DH_PARAMETERS[7] = {
@@ -78,7 +79,13 @@ const std::vector<std::string> panda_link_names = {
     "fr3_link5", "fr3_link6", "fr3_link7", "fr3_link8",
 };
 
-const int DEFAULT_TOPIC_QOS = 10;
+const inline rclcpp::QoS DEFAULT_TOPIC_QOS() {
+  rclcpp::QoS qos(2);
+  qos.reliability(rclcpp::ReliabilityPolicy::Reliable)
+      .history(rclcpp::HistoryPolicy::KeepLast);
+  return qos;
+}
+
 } // namespace panda_interface_names
 namespace panda_constants {
 const std::string panda_model_effort{"/models/panda/panda_fr3.urdf"};

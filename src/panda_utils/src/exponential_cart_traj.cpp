@@ -129,19 +129,19 @@ public:
         realtime_tools::RealtimePublisher<geometry_msgs::msg::Pose>>(
         this->create_publisher<geometry_msgs::msg::Pose>(
             panda_interface_names::panda_pose_cmd_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS));
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
 
     cmd_twist_pub = std::make_shared<
         realtime_tools::RealtimePublisher<geometry_msgs::msg::Twist>>(
         this->create_publisher<geometry_msgs::msg::Twist>(
             panda_interface_names::panda_twist_cmd_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS));
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
 
     cmd_accel_pub = std::make_shared<
         realtime_tools::RealtimePublisher<geometry_msgs::msg::Accel>>(
         this->create_publisher<geometry_msgs::msg::Accel>(
             panda_interface_names::panda_accel_cmd_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS));
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
 
     auto last_pose_cb = [this](const geometry_msgs::msg::Pose msg) {
       last_pose = msg;
@@ -155,13 +155,13 @@ public:
 
     cmd_pose_sub = this->create_subscription<geometry_msgs::msg::Pose>(
         panda_interface_names::panda_pose_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, last_pose_cb);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), last_pose_cb);
     cmd_twist_sub = this->create_subscription<geometry_msgs::msg::Twist>(
         panda_interface_names::panda_twist_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, last_twist_cb);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), last_twist_cb);
     cmd_accel_sub = this->create_subscription<geometry_msgs::msg::Accel>(
         panda_interface_names::panda_accel_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, last_accel_cb);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), last_accel_cb);
   }
 
 private:

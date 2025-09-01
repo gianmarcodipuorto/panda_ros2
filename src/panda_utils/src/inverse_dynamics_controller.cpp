@@ -186,7 +186,7 @@ public:
 
     robot_joint_states_sub = this->create_subscription<JointState>(
         panda_interface_names::joint_state_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_joint_state);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_joint_state);
 
     auto set_joint_measured_torques =
         [this](const JointTorqueMeasureStamped::SharedPtr msg) {
@@ -196,7 +196,7 @@ public:
     robot_measured_torque_sub =
         this->create_subscription<JointTorqueMeasureStamped>(
             panda_interface_names::torque_sensor_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS,
+            panda_interface_names::DEFAULT_TOPIC_QOS(),
             set_joint_measured_torques);
 
     auto set_desired_joints_command =
@@ -224,54 +224,54 @@ public:
 
     desired_joint_command_sub = this->create_subscription<JointsCommand>(
         panda_interface_names::panda_joint_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_desired_joints_command);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_joints_command);
 
     robot_joint_efforts_pub = this->create_publisher<JointsEffort>(
         panda_interface_names::panda_effort_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     robot_joint_efforts_pub_debug = this->create_publisher<JointsEffort>(
         "debug/cmd/effort_no_gravity",
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     gravity_contribute_debug = this->create_publisher<JointsEffort>(
-        "debug/cmd/gravity", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/cmd/gravity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     position_error_debug = this->create_publisher<JointsPos>(
-        "debug/error/joint_position", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/error/joint_position", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     velocity_error_debug = this->create_publisher<JointsPos>(
-        "debug/error/joint_velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/error/joint_velocity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     desired_position_debug = this->create_publisher<JointsPos>(
         "debug/desired_joint_position",
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     desired_velocity_debug = this->create_publisher<JointsPos>(
         "debug/desired_joint_velocity",
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     desired_acceleration_debug = this->create_publisher<JointsPos>(
         "debug/desired_joint_acceleration",
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     current_position_debug = this->create_publisher<JointsPos>(
         "debug/current_joint_position",
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     current_velocity_debug = this->create_publisher<JointsPos>(
         "debug/current_joint_velocity",
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     y_contribute_debug = this->create_publisher<JointsEffort>(
-        "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     y_desired_accel_debug = this->create_publisher<JointsEffort>(
         "debug/cmd/y_contribute_desired_accel",
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
     mass_matrix_val_debug = this->create_publisher<std_msgs::msg::Float64>(
-        "debug/mass_matrix_norm", panda_interface_names::DEFAULT_TOPIC_QOS);
+        "debug/mass_matrix_norm", panda_interface_names::DEFAULT_TOPIC_QOS());
 
     // Compliance mode Service
 
@@ -301,13 +301,13 @@ public:
         realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
         this->create_publisher<geometry_msgs::msg::PoseStamped>(
             panda_interface_names::panda_pose_state_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS));
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
 
     joint_states_pub =
         std::make_shared<realtime_tools::RealtimePublisher<JointState>>(
             this->create_publisher<JointState>(
                 panda_interface_names::joint_state_topic_name,
-                panda_interface_names::DEFAULT_TOPIC_QOS));
+                panda_interface_names::DEFAULT_TOPIC_QOS()));
   }
 
   ~InverseDynamicsController() {

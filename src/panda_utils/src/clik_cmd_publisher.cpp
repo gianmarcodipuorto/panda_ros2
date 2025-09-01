@@ -69,11 +69,11 @@ public:
 
     desired_pose_sub = this->create_subscription<Pose>(
         panda_interface_names::panda_pose_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_pose_cb);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_pose_cb);
 
     desired_twist_sub = this->create_subscription<geometry_msgs::msg::Twist>(
         panda_interface_names::panda_twist_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_twist_cb);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_twist_cb);
 
     auto control_cycle = [this]() {
       // clik_one_step();
@@ -98,7 +98,7 @@ public:
     timer->cancel();
     cmd_pub = this->create_publisher<panda_interfaces::msg::JointsCommand>(
         panda_interface_names::panda_joint_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS);
+        panda_interface_names::DEFAULT_TOPIC_QOS());
   }
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
@@ -128,7 +128,7 @@ public:
 
     joint_state_sub = this->create_subscription<sensor_msgs::msg::JointState>(
         panda_interface_names::joint_state_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS, set_joint_state);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_joint_state);
 
     auto current_config_thread = [this]() {
       RCLCPP_INFO(this->get_logger(),

@@ -34,7 +34,7 @@ int main(int argc, char *argv[]) {
   std::shared_ptr<rclcpp::Publisher<panda_interfaces::msg::JointsPos>> pub =
       node->create_publisher<panda_interfaces::msg::JointsPos>(
           panda_interface_names::panda_pos_cmd_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   JointsPos mess;
 

@@ -202,10 +202,30 @@ def generate_launch_description():
             'world_base_link': LaunchConfiguration('world_base_link')
         }],
     )
-    publish_franks_tfs = Node(
+    # publish_franks_tfs = Node(
+    #     package='panda_utils',
+    #     executable='publish_franks_tfs',
+    #     name='publish_franks_tfs',
+    #     parameters=[{
+    #         'use_sim_time': LaunchConfiguration('use_sim_time'),
+    #         'robot_ip': LaunchConfiguration('robot_ip'),
+    #         'world_base_link': LaunchConfiguration('world_base_link')
+    #     }],
+    # )
+    # external_force_estimator = Node(
+    #     package='panda_utils',
+    #     executable='estimate_external_forces',
+    #     name='estimate_external_forces',
+    #     parameters=[{
+    #         'use_sim_time': LaunchConfiguration('use_sim_time'),
+    #         'robot_ip': LaunchConfiguration('robot_ip'),
+    #         'world_base_link': LaunchConfiguration('world_base_link')
+    #     }],
+    # )
+    publish_tfs_and_estimate_forces = Node(
         package='panda_utils',
-        executable='publish_franks_tfs',
-        name='publish_franks_tfs',
+        executable='estimate_hand_external_force',
+        name='estimate_hand_external_force',
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'robot_ip': LaunchConfiguration('robot_ip'),
@@ -240,8 +260,7 @@ def generate_launch_description():
         clik_cmd_pub,
         inverse_dynamics_controller,
         impedance_controller,
-        publish_franks_tfs
-        # pos_cmds_joints,
-        # pd_grav_controller,
-        # controller_manager
+        # publish_franks_tfs,
+        # external_force_estimator,
+        publish_tfs_and_estimate_forces
     ])

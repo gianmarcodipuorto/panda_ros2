@@ -291,7 +291,7 @@ int main(int argc, char **argv) {
   rclcpp::Subscription<JointState>::SharedPtr joint_states_sub =
       sub_node->create_subscription<JointState>(
           panda_interface_names::joint_state_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS, joint_states_cb);
+          panda_interface_names::DEFAULT_TOPIC_QOS(), joint_states_cb);
 
   auto pose_state_cb = [&pose_state](const PoseStamped msg) {
     pose_state = msg;
@@ -300,7 +300,7 @@ int main(int argc, char **argv) {
   rclcpp::Subscription<PoseStamped>::SharedPtr pose_state_sub =
       sub_node->create_subscription<PoseStamped>(
           panda_interface_names::panda_pose_state_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS, pose_state_cb);
+          panda_interface_names::DEFAULT_TOPIC_QOS(), pose_state_cb);
 
   tf_buffer = std::make_unique<tf2_ros::Buffer>(sub_node->get_clock());
 
@@ -326,20 +326,20 @@ int main(int argc, char **argv) {
   rclcpp::Publisher<Pose>::SharedPtr pose_cmd_pub =
       main_node->create_publisher<Pose>(
           panda_interface_names::panda_pose_cmd_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
   rclcpp::Publisher<Twist>::SharedPtr twist_cmd_pub =
       main_node->create_publisher<Twist>(
           panda_interface_names::panda_twist_cmd_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
   rclcpp::Publisher<Accel>::SharedPtr accel_cmd_pub =
       main_node->create_publisher<Accel>(
           panda_interface_names::panda_accel_cmd_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   rclcpp::Publisher<std_msgs::msg::ColorRGBA>::SharedPtr state_publisher =
       main_node->create_publisher<std_msgs::msg::ColorRGBA>(
           panda_interface_names::demo_state_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   auto update_state = [&state_publisher, &state]() {
     publish_state(state_publisher, state);

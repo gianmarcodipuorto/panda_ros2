@@ -12,77 +12,77 @@ void DebugPublisher::create_pubs(
     rclcpp_lifecycle::LifecycleNode::SharedPtr node) {
 
   robot_joint_efforts_pub_debug = node->create_publisher<JointsEffort>(
-      "debug/cmd/effort_no_gravity", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/cmd/effort_no_gravity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   gravity_contribute_debug = node->create_publisher<JointsEffort>(
-      "debug/cmd/gravity", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/cmd/gravity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   pose_error_debug = node->create_publisher<geometry_msgs::msg::PoseStamped>(
-      "debug/error/pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/error/pose", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   velocity_error_debug = node->create_publisher<TwistStamped>(
-      "debug/error/velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/error/velocity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   desired_pose_debug = node->create_publisher<PoseStamped>(
-      "debug/desired_pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/desired_pose", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   desired_velocity_debug = node->create_publisher<TwistStamped>(
-      "debug/desired_velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/desired_velocity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   desired_acceleration_debug = node->create_publisher<AccelStamped>(
-      "debug/desired_acceleration", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/desired_acceleration", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   current_pose_debug = node->create_publisher<PoseStamped>(
-      "debug/current_pose", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/current_pose", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   current_velocity_debug = node->create_publisher<TwistStamped>(
-      "debug/current_velocity", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/current_velocity", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   y_contribute_debug = node->create_publisher<JointsEffort>(
-      "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS);
+      "debug/cmd/y_contribute", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   y_cartesian_contribute_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/cmd/y_cartesian_contribute",
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   tau_external_contribute_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/cmd/tau_ext_contribute",
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   external_forces_contribute_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/cmd/external_forces_contribute",
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   lamda_dls_debug =
       node->create_publisher<panda_interfaces::msg::DoubleStamped>(
-          "debug/lambda", panda_interface_names::DEFAULT_TOPIC_QOS);
+          "debug/lambda", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   manipulability_index_debug =
       node->create_publisher<panda_interfaces::msg::DoubleStamped>(
           "debug/manipulability_index",
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   manipulability_index_grad_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/manipulability_index_grad",
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   joint_limits_index_debug =
       node->create_publisher<panda_interfaces::msg::DoubleStamped>(
-          "debug/joint_limits_index", panda_interface_names::DEFAULT_TOPIC_QOS);
+          "debug/joint_limits_index", panda_interface_names::DEFAULT_TOPIC_QOS());
 
   joint_limits_index_grad_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/joint_limits_index_grad",
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 
   min_singular_val_pub =
       node->create_publisher<panda_interfaces::msg::DoubleStamped>(
           panda_interface_names::min_singular_value_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS);
+          panda_interface_names::DEFAULT_TOPIC_QOS());
 }
 
 void DebugPublisher::assign_time(rclcpp::Time now) {
