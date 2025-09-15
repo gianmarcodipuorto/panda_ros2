@@ -57,6 +57,9 @@ struct debug_data {
   // control law y e.g. tau = B * y +  n
   std::optional<Eigen::Vector<double, 7>> y;
 
+  // Coriolis term
+  std::optional<Eigen::Vector<double, 7>> coriolis;
+
   // control law corrective cartesian component, before inverse jacobian
   // multiplication
   std::optional<Eigen::Vector<double, 6>> y_cartesian;
@@ -72,6 +75,9 @@ struct debug_data {
 
   // Current twist
   Eigen::Vector<double, 6> current_twist;
+  
+  // Current Jdot * qdot
+  Eigen::Vector<double, 6> current_j_dot_q_dot;
 
   // Pose error (Quaternion as w, x, y, z)
   Eigen::Vector<double, 7> error_pose_vec;
@@ -116,6 +122,8 @@ private:
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       tau_external_contribute_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      coriolis_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       external_forces_contribute_debug{};
   Publisher<TwistStamped>::SharedPtr velocity_error_debug{};
   Publisher<PoseStamped>::SharedPtr desired_pose_debug{};
@@ -123,6 +131,7 @@ private:
   Publisher<AccelStamped>::SharedPtr desired_acceleration_debug{};
   Publisher<PoseStamped>::SharedPtr current_pose_debug{};
   Publisher<TwistStamped>::SharedPtr current_velocity_debug{};
+  Publisher<TwistStamped>::SharedPtr current_jdot_qdot_debug{};
   Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr lamda_dls_debug{};
 
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr

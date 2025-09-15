@@ -30,31 +30,78 @@ using GoalHandleStopTraj = rclcpp_action::ServerGoalHandle<StopTraj>;
 using namespace std::chrono_literals;
 
 struct decay_laws {
-  double lambda, mu, a, b, t_f;
-  double q_i_dot, q_i_ddot;
-  decay_laws(double t_f, double q_i_dot, double q_i_ddot, double lambda = 5,
-             double mu = 10)
-      : lambda(lambda), mu(mu), t_f(t_f), q_i_dot(q_i_dot), q_i_ddot(q_i_ddot) {
-    b = (-lambda * q_i_dot - q_i_ddot) / (mu - lambda);
-    a = q_i_dot - b;
+  double k, t_f, b, c;
+  double q_i, q_i_dot, q_i_ddot;
+  double q_f, q_f_dot, q_f_ddot;
+  decay_laws(double t_f, double q_i, double q_i_dot, double q_i_ddot,
+             double k = 5)
+      : k(k), t_f(t_f), q_i(q_i), q_i_dot(q_i_dot), q_i_ddot(q_i_ddot) {
+    b = -pow(k, 2) * q_i_dot - k * q_i_ddot;
+    c = q_i_ddot + k * q_i_dot;
+    q_f_ddot = 0.0;
+    q_f_dot = 0.0;
+    q_f = q_i - 2 * (q_i_dot / k) * exp(-k * t_f) +
+          (q_i_dot / k) * (1 - k * t_f * exp(-k * t_f)) +
+          (q_i_ddot / pow(k, 2)) -
+          (q_i_ddot / k) * (1 + k * t_f) * exp(-k * t_f);
   }
+
+  double exponential_decay_position(double t) {
+    if (t <= 0.0)
+      return q_i;
+    if (t >= t_f)
+      return q_f;
+
+    return q_i + (q_i_dot / k) * (1 - exp(-k * t)) +
+           (c / pow(k, 2)) * (1 - exp(-k * t_f) * (1 + k * t));
+  }
+
   double exponential_decay_velocity(double t) {
     if (t <= 0.0)
       return q_i_dot;
     if (t >= t_f)
-      return 0.0;
+      return q_f_dot;
 
-    return a * exp(-lambda * t) + b * exp(-mu * t);
+    return exp(-k * t) * (q_i_dot + c * t);
   }
+
   double exponential_decay_acceleration(double t) {
     if (t <= 0.0)
       return q_i_ddot;
     if (t >= t_f)
-      return 0.0;
+      return q_f_ddot;
 
-    return -lambda * a * exp(-lambda * t) - mu * b * exp(-mu * t);
+    return (q_i_ddot + b * t) * exp(-k * t);
   }
 };
+
+// struct decay_laws {
+//   double lambda, mu, a, b, t_f;
+//   double q_i_dot, q_i_ddot;
+//   decay_laws(double t_f, double q_i_dot, double q_i_ddot, double lambda = 5,
+//              double mu = 10)
+//       : lambda(lambda), mu(mu), t_f(t_f), q_i_dot(q_i_dot),
+//       q_i_ddot(q_i_ddot) {
+//     b = (-lambda * q_i_dot - q_i_ddot) / (mu - lambda);
+//     a = q_i_dot - b;
+//   }
+//   double exponential_decay_velocity(double t) {
+//     if (t <= 0.0)
+//       return q_i_dot;
+//     if (t >= t_f)
+//       return 0.0;
+//
+//     return a * exp(-lambda * t) + b * exp(-mu * t);
+//   }
+//   double exponential_decay_acceleration(double t) {
+//     if (t <= 0.0)
+//       return q_i_ddot;
+//     if (t >= t_f)
+//       return 0.0;
+//
+//     return -lambda * a * exp(-lambda * t) - mu * b * exp(-mu * t);
+//   }
+// };
 
 class StopTrajectory : public rclcpp::Node {
 
@@ -217,6 +264,9 @@ private:
         initial_pose.orientation.w, initial_pose.orientation.x,
         initial_pose.orientation.y, initial_pose.orientation.z};
     initial_quat.normalize();
+    Eigen::Quaterniond current_quat = initial_quat;
+    Eigen::AngleAxisd axis_angle = Eigen::AngleAxisd{initial_quat};
+    Eigen::Vector3d axis = axis_angle.axis();
 
     auto feedback = std::make_shared<StopTraj::Feedback>();
     auto result = std::make_shared<StopTraj::Result>();
@@ -235,28 +285,25 @@ private:
     std::map<int, decay_laws> orientation_laws;
 
     translation_laws.emplace(0, decay_laws(goal->total_time,
+                                           initial_pose.position.x,
                                            initial_velocity.linear.x,
                                            initial_acceleration.linear.x));
-    RCLCPP_INFO_STREAM(this->get_logger(),
-                       "First translation law: a = "
-                           << translation_laws.at(0).a
-                           << ", b = " << translation_laws.at(0).b
-                           << ", mu = " << translation_laws.at(0).mu
-                           << ", lambda = " << translation_laws.at(0).lambda);
     translation_laws.emplace(1, decay_laws(goal->total_time,
+                                           initial_pose.position.y,
                                            initial_velocity.linear.y,
                                            initial_acceleration.linear.y));
     translation_laws.emplace(2, decay_laws(goal->total_time,
+                                           initial_pose.position.z,
                                            initial_velocity.linear.z,
                                            initial_acceleration.linear.z));
 
-    orientation_laws.emplace(0, decay_laws(goal->total_time,
+    orientation_laws.emplace(0, decay_laws(goal->total_time, 0.0,
                                            initial_velocity.angular.x,
                                            initial_acceleration.angular.x));
-    orientation_laws.emplace(1, decay_laws(goal->total_time,
+    orientation_laws.emplace(1, decay_laws(goal->total_time, 0.0,
                                            initial_velocity.angular.y,
                                            initial_acceleration.angular.y));
-    orientation_laws.emplace(2, decay_laws(goal->total_time,
+    orientation_laws.emplace(2, decay_laws(goal->total_time, 0.0,
                                            initial_velocity.angular.z,
                                            initial_acceleration.angular.z));
 
@@ -275,7 +322,12 @@ private:
       RCLCPP_DEBUG(this->get_logger(), "Uploading next pose");
 
       // Calculating position
-      cmd_pose.position = initial_pose.position;
+      cmd_pose.position.x =
+          translation_laws.at(0).exponential_decay_position(t.seconds());
+      cmd_pose.position.y =
+          translation_laws.at(1).exponential_decay_position(t.seconds());
+      cmd_pose.position.z =
+          translation_laws.at(2).exponential_decay_position(t.seconds());
 
       cmd_twist.linear.x =
           translation_laws.at(0).exponential_decay_velocity(t.seconds());
@@ -292,17 +344,30 @@ private:
           translation_laws.at(2).exponential_decay_acceleration(t.seconds());
 
       // Orientation
-      cmd_pose.orientation.x = initial_quat.x();
-      cmd_pose.orientation.y = initial_quat.y();
-      cmd_pose.orientation.z = initial_quat.z();
-      cmd_pose.orientation.w = initial_quat.w();
-
+      // For the orientation we apply the decay laws to the twist and the accel
+      // and we calculate a theta angle as the integral of the twist: based on
+      // this theta we calculate a delta quaternion to apply to the current
+      // quaternion
       cmd_twist.angular.x =
           orientation_laws.at(0).exponential_decay_velocity(t.seconds());
       cmd_twist.angular.y =
           orientation_laws.at(1).exponential_decay_velocity(t.seconds());
       cmd_twist.angular.z =
           orientation_laws.at(2).exponential_decay_velocity(t.seconds());
+
+      Eigen::Quaterniond delta_quat{1.0,
+                                    0.5 * cmd_twist.angular.x / loop_rate_freq,
+                                    0.5 * cmd_twist.angular.y / loop_rate_freq,
+                                    0.5 * cmd_twist.angular.z / loop_rate_freq};
+      delta_quat.normalize();
+
+      current_quat = current_quat * delta_quat;
+      current_quat.normalize();
+
+      cmd_pose.orientation.x = current_quat.x();
+      cmd_pose.orientation.y = current_quat.y();
+      cmd_pose.orientation.z = current_quat.z();
+      cmd_pose.orientation.w = current_quat.w();
 
       cmd_accel.angular.x =
           orientation_laws.at(0).exponential_decay_acceleration(t.seconds());

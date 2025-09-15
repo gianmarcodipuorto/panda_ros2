@@ -38,6 +38,9 @@ void DebugPublisher::create_pubs(
   current_velocity_debug =
       node->create_publisher<TwistStamped>("debug/current_velocity", qos);
 
+  current_jdot_qdot_debug =
+      node->create_publisher<TwistStamped>("debug/current_jdot_qdot", qos);
+
   y_contribute_debug =
       node->create_publisher<JointsEffort>("debug/cmd/y_contribute", qos);
 
@@ -48,6 +51,10 @@ void DebugPublisher::create_pubs(
   tau_external_contribute_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/cmd/tau_ext_contribute", qos);
+
+  coriolis_debug =
+      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
+          "debug/coriolis", qos);
 
   external_forces_contribute_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
@@ -121,6 +128,17 @@ void DebugPublisher::publish(rclcpp::Time now) {
   twist.twist.angular.z = pub_data.current_twist[5];
 
   current_velocity_debug->publish(twist);
+
+  twist.twist.linear.x = pub_data.current_j_dot_q_dot[0];
+  twist.twist.linear.y = pub_data.current_j_dot_q_dot[1];
+  twist.twist.linear.z = pub_data.current_j_dot_q_dot[2];
+
+  twist.twist.angular.x = pub_data.current_j_dot_q_dot[3];
+  twist.twist.angular.y = pub_data.current_j_dot_q_dot[4];
+  twist.twist.angular.z = pub_data.current_j_dot_q_dot[5];
+
+  current_jdot_qdot_debug->publish(twist);
+
   // Publish error on pose
   pose.pose.position.x = pub_data.error_pose_vec(0);
   pose.pose.position.y = pub_data.error_pose_vec(1);
@@ -190,6 +208,13 @@ void DebugPublisher::publish(rclcpp::Time now) {
       arr_stamped.data[i] = pub_data.tau_ext.value()[i];
     }
     tau_external_contribute_debug->publish(arr_stamped);
+  }
+
+  if (pub_data.coriolis.has_value()) {
+    for (size_t i = 0; i < 7; i++) {
+      arr_stamped.data[i] = pub_data.coriolis.value()[i];
+    }
+    coriolis_debug->publish(arr_stamped);
   }
 
   if (pub_data.des_pose.has_value()) {

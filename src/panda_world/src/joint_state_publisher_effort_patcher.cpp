@@ -2,6 +2,7 @@
 #include "panda_interfaces/msg/joints_effort.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include <franka/robot.h>
+#include <random>
 #include <rclcpp/create_timer.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -10,9 +11,28 @@
 
 using namespace std::chrono_literals;
 
+double mean = 0.0;
+double variance = 1.2e-4;
+double std_dev = sqrt(variance);
+
+class GaussianNoiseGenerator {
+public:
+  GaussianNoiseGenerator(double mean, double stddev)
+      : generator(std::random_device{}()), distribution(mean, stddev) {}
+
+  double generate() { return distribution(generator); }
+  double operator()() { return generate(); }
+
+private:
+  std::mt19937 generator;
+
+  std::normal_distribution<> distribution;
+};
+
 class JointStateEffortPatcher : public rclcpp::Node {
 public:
-  JointStateEffortPatcher() : Node("joint_state_effort_patcher") {
+  JointStateEffortPatcher()
+      : Node("joint_state_effort_patcher"), noise_gen(mean, std_dev) {
 
     this->declare_parameter<std::string>("robot_ip", "192.168.1.0");
     this->declare_parameter<bool>("use_robot", false);
@@ -49,6 +69,7 @@ public:
             std::vector<double>(std::begin(state.q), std::end(state.q));
         msg.velocity =
             std::vector<double>(std::begin(state.dq), std::end(state.dq));
+
         msg.effort =
             std::vector<double>(std::begin(state.tau_J), std::end(state.tau_J));
         joint_states_pub_->publish(msg);
@@ -101,6 +122,11 @@ private:
     fixed_msg.velocity = msg->velocity;
     fixed_msg.effort.resize(msg->name.size());
 
+    // Add noise
+    for (size_t i = 0; i < fixed_msg.velocity.size(); i++) {
+      fixed_msg.velocity[i] += noise_gen.generate();
+    }
+
     for (size_t i = 0; i < msg->name.size(); ++i) {
       fixed_msg.effort[i] = this->efforts[i];
     }
@@ -117,6 +143,8 @@ private:
   rclcpp::TimerBase::SharedPtr timer;
   double efforts[7]{};
   sensor_msgs::msg::JointState last_mess{};
+
+  GaussianNoiseGenerator noise_gen;
 
   bool use_robot;
   std::optional<franka::Robot> robot_{};

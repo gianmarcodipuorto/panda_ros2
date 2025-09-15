@@ -1,6 +1,7 @@
 #include "algorithm/jacobian.hpp"
 #include "franka/control_types.h"
 #include "franka/exception.h"
+#include "franka/lowpass_filter.h"
 #include "franka/robot_state.h"
 #include "geometry_msgs/msg/accel.hpp"
 #include "geometry_msgs/msg/accel_stamped.hpp"
@@ -663,11 +664,10 @@ public:
       Eigen::Matrix4d matrix_ident = ident.matrix();
       std::array<double, 16> ident_transform;
       Eigen::Map<Eigen::Matrix4d>(ident_transform.data()) = matrix_ident;
-      Eigen::Vector<double, 7> last_joints_speed =
+      Eigen::Vector<double, 7> current_joints_speed =
           Eigen::Vector<double, 7>::Zero();
 
       // Get jacobian function
-
       auto get_jacob =
           [this](const Eigen::Vector<double, 7> &current_joint_pos) {
             auto state = franka::RobotState{};
@@ -683,7 +683,7 @@ public:
 
       robot_control_callback =
           [this, KP, KD, alpha, MD, MD_1, k_max, eps, ident_transform,
-           get_jacob, &last_joints_speed,
+           get_jacob, &current_joints_speed,
            &first_callback_run](const franka::RobotState &state,
                                 franka::Duration dt) -> franka::Torques {
         if (!(start_flag.load() && rclcpp::ok())) {
@@ -700,11 +700,10 @@ public:
           current_joints_config_vec[i] = state.q[i];
         }
 
-        Eigen::Vector<double, 7> current_joints_speed;
         for (size_t i = 0; i < 7; i++) {
           // current_joints_speed[i] = state.dq[i];
           current_joints_speed[i] = franka::lowpassFilter(
-              dt.toSec(), state.dq[i], last_joints_speed[i], 50.0);
+              dt.toSec(), state.dq[i], current_joints_speed[i], 50.0);
         }
 
         // Get current pose and jacobian according to stiffness or flange
@@ -869,6 +868,9 @@ public:
         // Clamp tau
         clamp_control(control_input_vec);
 
+        // clamp_control_speed(control_input_vec,
+        //                     dt.toSec());
+
         // Safety checks
         for (int i = 0; i < control_input_vec.size(); i++) {
           if ((abs(control_input_vec[i] - last_control_input[i]) / dt.toSec()) >
@@ -879,19 +881,26 @@ public:
                                 "Torque variation over limit");
             return franka::MotionFinished(franka::Torques(state.tau_J_d));
           } else if (abs(control_input_vec[i]) >=
-                     8.5 * effort_limits[i] / 10.0) {
+                     7.5 * effort_limits[i] / 10.0) {
             panda_franka->stop();
             start_flag.store(false);
             RCLCPP_ERROR_STREAM(this->get_logger(),
-                                "Torque abs value over limit (85%)");
+                                "Torque abs value over limit (75%)");
             return franka::MotionFinished(franka::Torques(state.tau_J_d));
-          } else if (abs(state.dq[i]) >= 0.4) {
+          } else if (abs(state.dq[i]) >= 0.3) {
             panda_franka->stop();
             start_flag.store(false);
             RCLCPP_ERROR_STREAM(this->get_logger(),
-                                "Joint velocity over the safety value 0.4");
+                                "Joint velocity over the safety value 0.3");
             return franka::MotionFinished(franka::Torques(state.tau_J_d));
           }
+        }
+        if (error_pose_vec.norm() >= 0.035) {
+          panda_franka->stop();
+          start_flag.store(false);
+          RCLCPP_ERROR_STREAM(this->get_logger(),
+                              "Norm of the pose error exceeded the limit");
+          return franka::MotionFinished(franka::Torques(state.tau_J_d));
         }
 
         // Apply control
@@ -943,8 +952,8 @@ public:
       std::array load_inertia{0.02001,        0.000006527121, -0.0004590,
                               0.000006527121, 0.01936,        0.000003371038,
                               -0.0004590,     0.000003371038, 0.002245};
-      panda_franka->setLoad(load, F_x_Cload, load_inertia);
-      RCLCPP_INFO_STREAM(this->get_logger(), "Set load on real robot");
+      // panda_franka->setLoad(load, F_x_Cload, load_inertia);
+      // RCLCPP_INFO_STREAM(this->get_logger(), "Set load on real robot");
       panda_franka_model = panda_franka->loadModel();
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Loaded robot model library with libfranka");
@@ -1697,7 +1706,9 @@ void ImpedanceController::control() {
   Eigen::Vector<double, 6> y_cartesian;
   Eigen::Matrix<double, 7, 6> jacobian_pinv;
   Eigen::Vector<double, 7> current_joints_config_vec;
-  Eigen::Vector<double, 7> current_joints_speed;
+  Eigen::Vector<double, 7> current_joints_speed =
+      Eigen::Vector<double, 7>::Zero();
+  Eigen::Vector<double, 7> last_joints_speed = Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 6> current_twist;
   Eigen::Vector<double, 6> error_twist;
   Pose current_pose_tmp;
@@ -1797,7 +1808,10 @@ void ImpedanceController::control() {
       }
 
       for (size_t i = 0; i < current_joint_config->position.size(); i++) {
-        current_joints_speed[i] = current_joint_config->velocity[i];
+        // current_joints_speed[i] = current_joint_config->velocity[i];
+        current_joints_speed[i] =
+            franka::lowpassFilter(0.001, current_joint_config->velocity[i],
+                                  current_joints_speed[i], 50.0);
       }
     }
 
@@ -1959,10 +1973,8 @@ void ImpedanceController::control() {
     //
     clamp_control(control_input);
 
-    // if (clamp) {
-    //   clamp_control_speed(control_input,
-    //                       (this->now() - last_control_cycle).seconds());
-    // }
+    clamp_control_speed(control_input,
+                        (this->now() - last_control_cycle).seconds());
 
     // Apply control
     //
@@ -2034,9 +2046,11 @@ void ImpedanceController::control_libfranka_sim() {
   Eigen::Vector<double, 7> y;
   Eigen::Vector<double, 6> y_cartesian;
   Eigen::Matrix<double, 7, 6> jacobian_pinv;
+  Eigen::Vector<double, 7> last_joints_speed = Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 7> tau_ext;
   Eigen::Vector<double, 7> current_joints_config_vec;
-  Eigen::Vector<double, 7> current_joints_speed;
+  Eigen::Vector<double, 7> current_joints_speed =
+      Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 6> current_twist;
   Eigen::Vector<double, 6> error_twist;
   Eigen::Vector<double, 6> h_e;
@@ -2116,7 +2130,7 @@ void ImpedanceController::control_libfranka_sim() {
   Eigen::Vector<double, 6> MD_{Md, Md, Md, Md, Md, Md};
   Eigen::Matrix<double, 6, 6> MD = Eigen::Matrix<double, 6, 6>::Identity();
   MD.diagonal() = MD_;
-  auto MD_1 = MD.inverse();
+  Eigen::Matrix<double, 6, 6> MD_1 = MD.inverse();
 
   RCLCPP_INFO_STREAM(this->get_logger(), "MD matrix and inverse: " << std::endl
                                                                    << MD
@@ -2136,25 +2150,31 @@ void ImpedanceController::control_libfranka_sim() {
       }
 
       for (size_t i = 0; i < current_joint_config->position.size(); i++) {
-        current_joints_speed[i] = current_joint_config->velocity[i];
+        // current_joints_speed[i] = current_joint_config->velocity[i];
+        current_joints_speed[i] =
+            franka::lowpassFilter(0.001, current_joint_config->velocity[i],
+                                  current_joints_speed[i], 50.0);
         state.dq[i] = current_joint_config->velocity[i];
       }
     }
 
-    {
-
-      // Using franka robot measured state
-      state = panda_franka->readOnce();
-
-      std::lock_guard<std::mutex> lock(joint_state_mutex);
-      for (size_t i = 0; i < current_joint_config->position.size(); i++) {
-        current_joints_config_vec[i] = state.q[i];
-      }
-
-      for (size_t i = 0; i < current_joint_config->position.size(); i++) {
-        current_joints_speed[i] = state.dq[i];
-      }
-    }
+    ///////////////////////////////////
+    // {
+    //
+    //   // Using franka robot measured state
+    //   //
+    //   state = panda_franka->readOnce();
+    //
+    //   std::lock_guard<std::mutex> lock(joint_state_mutex);
+    //   for (size_t i = 0; i < current_joint_config->position.size(); i++) {
+    //     current_joints_config_vec[i] = state.q[i];
+    //   }
+    //
+    //   for (size_t i = 0; i < current_joint_config->position.size(); i++) {
+    //     current_joints_speed[i] = state.dq[i];
+    //   }
+    // }
+    ///////////////////////////////////
 
     // Get current pose
     Pose current_pose;
@@ -2167,7 +2187,7 @@ void ImpedanceController::control_libfranka_sim() {
       jacobian = get_jacobian(
           panda_franka_model->zeroJacobian(franka::Frame::kStiffness, state));
     } else {
-      panda_franka->setK(ident_transform);
+      // panda_franka->setK(ident_transform);
       current_pose =
           get_pose(panda_franka_model->pose(franka::Frame::kFlange, state));
       RCLCPP_INFO_STREAM_ONCE(
@@ -2183,12 +2203,6 @@ void ImpedanceController::control_libfranka_sim() {
           panda_franka_model->zeroJacobian(franka::Frame::kFlange, state));
       RCLCPP_INFO_STREAM_ONCE(this->get_logger(),
                               "Current jacobian: [" << jacobian << "]");
-    }
-
-    if (jacobian.array().isInf().any() || jacobian.array().isNaN().any()) {
-      RCLCPP_ERROR_STREAM(this->get_logger(),
-                          "Value(s) in the jacobian is NaN/Inf");
-      start_flag.store(false);
     }
 
     Eigen::Quaterniond current_quat{};
@@ -2227,20 +2241,7 @@ void ImpedanceController::control_libfranka_sim() {
       error_pose_vec(3) = error_quat.x();
       error_pose_vec(4) = error_quat.y();
       error_pose_vec(5) = error_quat.z();
-
-      // Check for NaN or Inf
-      if (error_pose_vec.array().isInf().any() ||
-          error_pose_vec.array().isNaN().any()) {
-        RCLCPP_ERROR_STREAM(this->get_logger(),
-                            "Value(s) in the error_pose_vec is NaN/Inf");
-        start_flag.store(false);
-      }
     }
-
-    // Calculate jacobian SVD
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU |
-                                                        Eigen::ComputeThinV);
-    double sigma_min = svd.singularValues().tail(1)(0);
 
     // RCLCPP_INFO(this->get_logger(), "Calculated jacob");
     // Doesn't account for friction
@@ -2253,12 +2254,6 @@ void ImpedanceController::control_libfranka_sim() {
         mass_matrix(j, i) = mass_matrix_raw[i * 7 + j];
       }
     }
-    if (mass_matrix.array().isInf().any() ||
-        mass_matrix.array().isNaN().any()) {
-      RCLCPP_ERROR_STREAM(this->get_logger(),
-                          "Value(s) in the mass_matrix is NaN/Inf");
-      start_flag.store(false);
-    }
     RCLCPP_INFO_STREAM_ONCE(this->get_logger(),
                             "Current mass matrxi: [" << mass_matrix << "]");
 
@@ -2270,17 +2265,12 @@ void ImpedanceController::control_libfranka_sim() {
     for (size_t i = 0; i < coriolis_raw.size(); i++) {
       coriolis(i) = coriolis_raw[i];
     }
-    if (coriolis.array().isInf().any() || coriolis.array().isNaN().any()) {
-      RCLCPP_ERROR_STREAM(this->get_logger(),
-                          "Value(s) in the coriolis is NaN/Inf");
-      start_flag.store(false);
-    }
-    RCLCPP_INFO_STREAM_ONCE(this->get_logger(),
-                            "Current coriolis: ["
-                                << coriolis[0] << ", " << coriolis[1] << ", "
-                                << coriolis[2] << ", " << coriolis[3] << ", "
-                                << coriolis[4] << ", " << coriolis[5] << ", "
-                                << coriolis[6] << "]");
+    RCLCPP_INFO_STREAM_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000.0,
+        "Current coriolis: [" << coriolis[0] << ", " << coriolis[1] << ", "
+                              << coriolis[2] << ", " << coriolis[3] << ", "
+                              << coriolis[4] << ", " << coriolis[5] << ", "
+                              << coriolis[6] << "]");
 
     std::array<double, 7> gravity_raw =
         this->panda_franka_model.value().gravity(state);
@@ -2295,6 +2285,10 @@ void ImpedanceController::control_libfranka_sim() {
                                 << gravity[4] << ", " << gravity[5] << ", "
                                 << gravity[6] << "]");
 
+    // Calculate jacobian SVD
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU |
+                                                        Eigen::ComputeThinV);
+    double sigma_min = svd.singularValues().tail(1)(0);
     // DYNAMIC LAMBDA BASED ON MINIMUM SINGULAR VALUE
     //
 
@@ -2304,12 +2298,6 @@ void ImpedanceController::control_libfranka_sim() {
 
     jacobian_pinv = compute_jacob_pseudoinv(jacobian, lambda);
 
-    if (jacobian_pinv.array().isInf().any() ||
-        jacobian_pinv.array().isNaN().any()) {
-      RCLCPP_ERROR_STREAM(this->get_logger(),
-                          "Value(s) in the jacobian pinv is NaN/Inf");
-      start_flag.store(false);
-    }
     RCLCPP_INFO_STREAM_ONCE(
         this->get_logger(),
         "Current error: [" << error_pose_vec[0] << ", " << error_pose_vec[1]
@@ -2321,12 +2309,6 @@ void ImpedanceController::control_libfranka_sim() {
       std::lock_guard<std::mutex> lock(desired_twist_mutex);
       current_twist = jacobian * current_joints_speed;
       error_twist = desired_twist_vec - current_twist;
-    }
-    if (error_twist.array().isInf().any() ||
-        error_twist.array().isNaN().any()) {
-      RCLCPP_ERROR_STREAM(this->get_logger(),
-                          "Value(s) in the error twist is NaN/Inf");
-      start_flag.store(false);
     }
 
     auto current_state = panda_franka->readOnce();
@@ -2358,11 +2340,11 @@ void ImpedanceController::control_libfranka_sim() {
       } else {
         y_cartesian =
             MD_1 *
-            (MD * desired_accel_vec + KD * error_twist + KP * error_pose_vec -
-             MD *
-                 get_j_dot(get_jacob, current_joints_config_vec,
-                           current_joints_speed) *
-                 current_joints_speed
+            (MD * desired_accel_vec + KD * error_twist + KP * error_pose_vec
+             // - MD *
+             //        get_j_dot(get_jacob, current_joints_config_vec,
+             //                  current_joints_speed) *
+             //        current_joints_speed
              // -
              //    h_e
             );
@@ -2371,21 +2353,12 @@ void ImpedanceController::control_libfranka_sim() {
       }
     }
 
-    control_input = mass_matrix * y + coriolis + tau_ext;
-    // control_input = mass_matrix * y + coriolis;
-
-    if (control_input.array().isInf().any() ||
-        control_input.array().isNaN().any()) {
-      RCLCPP_ERROR_STREAM(this->get_logger(),
-                          "Value(s) in the control input vec is NaN/Inf");
-      start_flag.store(false);
-    }
+    // control_input = mass_matrix * y + coriolis + tau_ext;
+    control_input = mass_matrix * y + coriolis;
 
     // Clamping control input
     //
-    if (clamp) {
-      clamp_control(control_input);
-    }
+    clamp_control(control_input);
 
     // Apply control
     //
@@ -2422,6 +2395,10 @@ void ImpedanceController::control_libfranka_sim() {
       debug_pub.data().lambda = lambda;
       debug_pub.data().sigma_min = sigma_min;
       debug_pub.data().current_twist = current_twist;
+      debug_pub.data().current_j_dot_q_dot =
+          get_j_dot(get_jacob, current_joints_config_vec,
+                    current_joints_speed) *
+          current_joints_speed;
       debug_pub.data().des_twist = desired_twist;
       debug_pub.data().des_pose = *desired_pose;
       debug_pub.data().des_accel = desired_accel;
