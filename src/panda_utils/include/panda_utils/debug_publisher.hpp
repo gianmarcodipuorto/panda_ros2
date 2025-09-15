@@ -77,7 +77,7 @@ struct debug_data {
   Eigen::Vector<double, 6> current_twist;
   
   // Current Jdot * qdot
-  Eigen::Vector<double, 6> current_j_dot_q_dot;
+  std::optional<Eigen::Vector<double, 6>> current_j_dot_q_dot;
 
   // Pose error (Quaternion as w, x, y, z)
   Eigen::Vector<double, 7> error_pose_vec;
