@@ -11,6 +11,7 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "multibody/fwd.hpp"
+#include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_interfaces/msg/double_array_stamped.hpp"
 #include "panda_interfaces/msg/double_stamped.hpp"
 #include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
@@ -359,33 +360,43 @@ public:
         panda_interface_names::joint_state_topic_name,
         panda_interface_names::CONTROLLER_SUBSCRIBER_QOS(), set_joint_state);
 
-    auto set_desired_pose = [this](const Pose msg) {
-      // RCLCPP_INFO_STREAM(this->get_logger(), "Received desired pose");
+    auto set_cartesian_cmd =
+        [this](
+            const panda_interfaces::msg::CartesianCommand::ConstSharedPtr msg) {
+          RCLCPP_INFO_ONCE(this->get_logger(), "Entered callback");
+          desired_cartesian_cmd = msg;
+          // std::cout << "im here";
+          // std::lock_guard<std::mutex> lock(desired_pose_mutex);
+          // desired_pose = std::make_shared<Pose>(msg);
+          // desired_pose_raw = msg;
+        };
+    auto set_desired_pose = [](const Pose::SharedPtr msg) {
+      // std::cout << "im here";
       // std::lock_guard<std::mutex> lock(desired_pose_mutex);
-      desired_pose = std::make_shared<Pose>(msg);
-      desired_pose_raw = msg;
+      // desired_pose = std::make_shared<Pose>(msg);
+      // desired_pose_raw = msg;
     };
-    auto set_desired_twist = [this](const Twist msg) {
+    auto set_desired_twist = [](const Twist::SharedPtr msg) {
       // RCLCPP_INFO_STREAM(this->get_logger(), "Received desired twist");
       // std::lock_guard<std::mutex> lock(desired_twist_mutex);
-      desired_twist = msg;
-      desired_twist_vec[0] = msg.linear.x;
-      desired_twist_vec[1] = msg.linear.y;
-      desired_twist_vec[2] = msg.linear.z;
-      desired_twist_vec[3] = msg.angular.x;
-      desired_twist_vec[4] = msg.angular.y;
-      desired_twist_vec[5] = msg.angular.z;
+      // desired_twist = msg;
+      // desired_twist_vec[0] = msg.linear.x;
+      // desired_twist_vec[1] = msg.linear.y;
+      // desired_twist_vec[2] = msg.linear.z;
+      // desired_twist_vec[3] = msg.angular.x;
+      // desired_twist_vec[4] = msg.angular.y;
+      // desired_twist_vec[5] = msg.angular.z;
     };
-    auto set_desired_accel = [this](const Accel msg) {
+    auto set_desired_accel = [](const Accel::SharedPtr msg) {
       // RCLCPP_INFO_STREAM(this->get_logger(), "Received desired accel");
       // std::lock_guard<std::mutex> lock(desired_accel_mutex);
-      desired_accel = msg;
-      desired_accel_vec[0] = msg.linear.x;
-      desired_accel_vec[1] = msg.linear.y;
-      desired_accel_vec[2] = msg.linear.z;
-      desired_accel_vec[3] = msg.angular.x;
-      desired_accel_vec[4] = msg.angular.y;
-      desired_accel_vec[5] = msg.angular.z;
+      // desired_accel = msg;
+      // desired_accel_vec[0] = msg.linear.x;
+      // desired_accel_vec[1] = msg.linear.y;
+      // desired_accel_vec[2] = msg.linear.z;
+      // desired_accel_vec[3] = msg.angular.x;
+      // desired_accel_vec[4] = msg.angular.y;
+      // desired_accel_vec[5] = msg.angular.z;
     };
 
     auto set_external_tau_cb = [this](const JointTorqueMeasureStamped msg) {
@@ -394,17 +405,22 @@ public:
       }
     };
 
-    desired_pose_sub = this->create_subscription<Pose>(
-        panda_interface_names::panda_pose_cmd_topic_name,
-        panda_interface_names::CONTROLLER_SUBSCRIBER_QOS(), set_desired_pose);
+    cartesian_cmd_sub =
+        this->create_subscription<panda_interfaces::msg::CartesianCommand>(
+            "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS(),
+            set_cartesian_cmd);
 
-    desired_twist_sub = this->create_subscription<Twist>(
-        panda_interface_names::panda_twist_cmd_topic_name,
-        panda_interface_names::CONTROLLER_SUBSCRIBER_QOS(), set_desired_twist);
-
-    desired_accel_sub = this->create_subscription<Accel>(
-        panda_interface_names::panda_accel_cmd_topic_name,
-        panda_interface_names::CONTROLLER_SUBSCRIBER_QOS(), set_desired_accel);
+    // desired_pose_sub = this->create_subscription<Pose>(
+    //     panda_interface_names::panda_pose_cmd_topic_name,
+    //     panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_pose);
+    //
+    // desired_twist_sub = this->create_subscription<Twist>(
+    //     panda_interface_names::panda_twist_cmd_topic_name,
+    //     panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_twist);
+    //
+    // desired_accel_sub = this->create_subscription<Accel>(
+    //     panda_interface_names::panda_accel_cmd_topic_name,
+    //     panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_accel);
 
     external_tau_sub = this->create_subscription<JointTorqueMeasureStamped>(
         panda_interface_names::torque_sensor_topic_name,
@@ -617,14 +633,27 @@ public:
       // RCLCPP_INFO_STREAM(this->get_logger(), "Set load on real robot");
       panda_franka_model = panda_franka.value().loadModel();
       // Debug prints before activation
-      // print_initial_franka_state(panda_franka->readOnce(),
-      //                            panda_franka_model.value(),
-      //                            this->get_logger());
+      print_initial_franka_state(panda_franka->readOnce(),
+                                 panda_franka_model.value(),
+                                 this->get_logger());
 
       // Getting initial pose as the current one
       desired_pose_raw = get_pose(panda_franka_model.value().pose(
           franka::Frame::kFlange, panda_franka->readOnce()));
       desired_pose = std::make_shared<Pose>(desired_pose_raw);
+      desired_twist_vec[0] = 0.0;
+      desired_twist_vec[1] = 0.0;
+      desired_twist_vec[2] = 0.0;
+      desired_twist_vec[3] = 0.0;
+      desired_twist_vec[4] = 0.0;
+      desired_twist_vec[5] = 0.0;
+
+      desired_accel_vec[0] = 0.0;
+      desired_accel_vec[1] = 0.0;
+      desired_accel_vec[2] = 0.0;
+      desired_accel_vec[3] = 0.0;
+      desired_accel_vec[4] = 0.0;
+      desired_accel_vec[5] = 0.0;
 
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Desired pose is: ["
@@ -697,22 +726,51 @@ public:
       Eigen::Vector<double, 7> tau_ext;
       Eigen::Vector<double, 6> h_e;
       Pose current_pose;
-      Eigen::Matrix<double, 6, 7> jacobian;
+      // Eigen::Matrix<double, 6, 7> jacobian =
+      //     Eigen::Matrix<double, 6, 7>::Zero();
       Eigen::Vector<double, 7> current_joints_config_vec;
       Eigen::Quaterniond error_quat{};
       Eigen::Vector<double, 6> error_pose_vec{};
       std::array<double, 49> mass_matrix_raw;
       std::array<double, 7> coriolis_raw;
+      Pose desired_pose;
+      Eigen::Vector<double, 6> local_current_twist_vec;
+      Eigen::Vector<double, 6> local_current_accel_vec;
 
       robot_control_callback =
           [this, KP, KD, MD, MD_1, k_max, eps, ident_transform, get_jacob,
-           &current_twist, &error_twist, &y, &current_pose, &jacobian,
-           &error_quat, &error_pose_vec,
-           &mass_matrix_raw](const franka::RobotState &state,
-                             franka::Duration dt) -> franka::Torques {
+           &current_twist, &error_twist, &y, &current_pose, &error_quat,
+           &error_pose_vec, &mass_matrix_raw,
+           &desired_pose](const franka::RobotState &state,
+                          franka::Duration dt) -> franka::Torques {
         if (!(start_flag.load() && rclcpp::ok())) {
           // Send last commanded joint effort command
           return franka::MotionFinished(franka::Torques(state.tau_J_d));
+        }
+
+        if (dt.toSec() == 0.0) {
+          jacobian = get_jacobian(
+              panda_franka_model->zeroJacobian(franka::Frame::kFlange, state));
+        }
+
+        {
+          if (desired_cartesian_cmd) {
+            desired_pose = desired_cartesian_cmd->pose;
+
+            desired_twist_vec[0] = desired_cartesian_cmd->twist.linear.x;
+            desired_twist_vec[1] = desired_cartesian_cmd->twist.linear.y;
+            desired_twist_vec[2] = desired_cartesian_cmd->twist.linear.z;
+            desired_twist_vec[3] = desired_cartesian_cmd->twist.angular.x;
+            desired_twist_vec[4] = desired_cartesian_cmd->twist.angular.y;
+            desired_twist_vec[5] = desired_cartesian_cmd->twist.angular.z;
+
+            desired_accel_vec[0] = desired_cartesian_cmd->accel.linear.x;
+            desired_accel_vec[1] = desired_cartesian_cmd->accel.linear.y;
+            desired_accel_vec[2] = desired_cartesian_cmd->accel.linear.z;
+            desired_accel_vec[3] = desired_cartesian_cmd->accel.angular.x;
+            desired_accel_vec[4] = desired_cartesian_cmd->accel.angular.y;
+            desired_accel_vec[5] = desired_cartesian_cmd->accel.angular.z;
+          }
         }
 
         auto now = this->now();
@@ -746,6 +804,8 @@ public:
           jacobian = get_jacobian(
               panda_franka_model->zeroJacobian(franka::Frame::kFlange, state));
         }
+
+        // Getting current desired quantities with mutex access
 
         Eigen::Quaterniond current_quat{};
         current_quat.w() = current_pose.orientation.w;
@@ -953,9 +1013,8 @@ public:
               this->get_logger(),
               "Control input vec Nan or Inf: "
                   << control_input_vec
-                  << ", Desired pose: " << desired_pose->position.x << ", "
-                  << desired_pose->position.y << ", "
-                  << desired_pose->position.z
+                  << ", Desired pose: " << desired_pose.position.x << ", "
+                  << desired_pose.position.y << ", " << desired_pose.position.z
                   << ", Desired twist: " << desired_twist_vec
                   << ", Desired accel: " << desired_accel_vec
                   << ", Jacobian pinv: " << jacobian_pinv << ", error twist: "
@@ -1407,9 +1466,8 @@ private:
   Mode mode = Mode::sim;
   // Subscribers
   rclcpp::Subscription<JointState>::SharedPtr robot_joint_states_sub{};
-  rclcpp::Subscription<Pose>::SharedPtr desired_pose_sub{};
-  rclcpp::Subscription<Twist>::SharedPtr desired_twist_sub{};
-  rclcpp::Subscription<Accel>::SharedPtr desired_accel_sub{};
+  rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr
+      cartesian_cmd_sub{};
   rclcpp::Subscription<JointTorqueMeasureStamped>::SharedPtr external_tau_sub{};
 
   // Commands publisher
@@ -1465,6 +1523,7 @@ private:
   std::optional<std::string> wrist_contact_frame{std::nullopt};
   std::optional<std::array<double, 16>> EE_to_K_transform{std::nullopt};
   Eigen::Quaterniond old_quaternion;
+  Eigen::Matrix<double, 6, 7> jacobian = Eigen::Matrix<double, 6, 7>::Zero();
 
   std::mutex joint_state_mutex;
   JointState::SharedPtr current_joint_config{nullptr};
@@ -1492,6 +1551,9 @@ private:
   Eigen::Vector<double, 6> desired_accel_vec = Eigen::Vector<double, 6>::Zero();
   Twist desired_twist;
   Accel desired_accel;
+
+  panda_interfaces::msg::CartesianCommand::ConstSharedPtr desired_cartesian_cmd{
+      nullptr};
 
   Eigen::VectorXd effort_limits{};
   Eigen::VectorXd effort_speed_limits{};
@@ -1722,6 +1784,9 @@ private:
     joint_max_limits = panda.getModel().upperPositionLimit;
   }
 
+  rclcpp::Subscription<Pose>::SharedPtr desired_pose_sub{};
+  rclcpp::Subscription<Twist>::SharedPtr desired_twist_sub{};
+  rclcpp::Subscription<Accel>::SharedPtr desired_accel_sub{};
   DebugPublisher debug_pub;
 };
 
@@ -2170,6 +2235,15 @@ void ImpedanceController::control_libfranka_sim() {
                                                                    << std::endl
                                                                    << MD_1);
 
+  if (realtime_tools::configure_sched_fifo(99)) {
+    RCLCPP_INFO(this->get_logger(), "Set real time priority");
+  } else {
+    RCLCPP_ERROR(this->get_logger(),
+                 "Real time priority not set, shutting down");
+    start_flag.store(false);
+    rclcpp::shutdown();
+  }
+
   while (start_flag.load() && rclcpp::ok()) {
 
     pose_debug.header.stamp = this->now();
@@ -2257,18 +2331,18 @@ void ImpedanceController::control_libfranka_sim() {
 
       // Get desired pose
       Eigen::Quaterniond desired_quat{};
-      desired_quat.w() = desired_pose->orientation.w;
-      desired_quat.x() = desired_pose->orientation.x;
-      desired_quat.y() = desired_pose->orientation.y;
-      desired_quat.z() = desired_pose->orientation.z;
+      desired_quat.w() = desired_pose_raw.orientation.w;
+      desired_quat.x() = desired_pose_raw.orientation.x;
+      desired_quat.y() = desired_pose_raw.orientation.y;
+      desired_quat.z() = desired_pose_raw.orientation.z;
       desired_quat.normalize();
 
       error_quat = desired_quat * current_quat.inverse();
       error_quat.normalize();
 
-      error_pose_vec(0) = desired_pose->position.x - current_pose.position.x;
-      error_pose_vec(1) = desired_pose->position.y - current_pose.position.y;
-      error_pose_vec(2) = desired_pose->position.z - current_pose.position.z;
+      error_pose_vec(0) = desired_pose_raw.position.x - current_pose.position.x;
+      error_pose_vec(1) = desired_pose_raw.position.y - current_pose.position.y;
+      error_pose_vec(2) = desired_pose_raw.position.z - current_pose.position.z;
 
       // Axis angle error
       error_pose_vec(3) = error_quat.x();
@@ -2409,18 +2483,18 @@ void ImpedanceController::control_libfranka_sim() {
     // robot_pose_pub->tryPublish(pose_debug);
 
     // Fill struct for debug prints
-    if (print_debug.mut.try_lock()) {
-      print_debug.current_twist = current_twist;
-      print_debug.has_data = true;
-      // Deep copy
-      print_debug.robot_state = franka::RobotState(state);
-      print_debug.sigma_min = sigma_min;
-      print_debug.tau_d_last = tau;
-      print_debug.gravity = panda_franka_model.value().gravity(state);
-      print_debug.tau_ext = tau_ext;
-      print_debug.h_e = h_e;
-      print_debug.mut.unlock();
-    }
+    // if (print_debug.mut.try_lock()) {
+    //   print_debug.current_twist = current_twist;
+    //   print_debug.has_data = true;
+    //   // Deep copy
+    //   print_debug.robot_state = franka::RobotState(state);
+    //   print_debug.sigma_min = sigma_min;
+    //   print_debug.tau_d_last = tau;
+    //   print_debug.gravity = panda_franka_model.value().gravity(state);
+    //   print_debug.tau_ext = tau_ext;
+    //   print_debug.h_e = h_e;
+    //   print_debug.mut.unlock();
+    // }
 
     if (debug_pub.data().mut.try_lock()) {
 
@@ -2428,6 +2502,7 @@ void ImpedanceController::control_libfranka_sim() {
       debug_pub.data().tau_ext = extern_tau;
       debug_pub.data().lambda = lambda;
       debug_pub.data().sigma_min = sigma_min;
+      debug_pub.data().current_pose = current_pose;
       debug_pub.data().current_twist = current_twist;
       debug_pub.data().current_j_dot_q_dot =
           get_j_dot(get_jacob, current_joints_config_vec,

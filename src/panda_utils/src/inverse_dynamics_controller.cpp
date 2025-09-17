@@ -460,6 +460,26 @@ public:
         // Clamp tau
         clamp_control(control_input_vec);
 
+        try {
+          for (int i = 0; i < control_input_vec.size(); i++) {
+            if (abs(control_input_vec[i]) >= 6.0 * effort_limits[i] / 10.0) {
+              RCLCPP_INFO_STREAM_ONCE(this->get_logger(),
+                                      "Running safety check: effort limit");
+              RCLCPP_ERROR_STREAM(this->get_logger(),
+                                  "Torque abs value over limit (60%)");
+              panda_franka->stop();
+              start_flag.store(false);
+              return franka::MotionFinished(franka::Torques(state.tau_J_d));
+            }
+          }
+        } catch (std::exception &ex) {
+          RCLCPP_ERROR_STREAM(this->get_logger(),
+                              "Error in safety checks: " << ex.what());
+          panda_franka->stop();
+          start_flag.store(false);
+          return franka::MotionFinished(franka::Torques(state.tau_J_d));
+        }
+
         // Apply control
 
         last_control_input = control_input_vec;
@@ -476,6 +496,15 @@ public:
           print_debug.gravity = panda_franka_model.value().gravity(state);
           print_debug.mut.unlock();
         }
+
+        // joint_state_to_pub.header.stamp = this->now();
+        // for (size_t i = 0; i < 7; i++) {
+        //   joint_state_to_pub.position[i] = state.q[i];
+        //   joint_state_to_pub.velocity[i] = state.dq[i];
+        //   joint_state_to_pub.effort[i] = state.tau_J[i];
+        // }
+        //
+        // joint_states_pub->tryPublish(joint_state_to_pub);
 
         return franka::Torques(tau);
       };
@@ -516,6 +545,13 @@ public:
         desired_joints_position[i] = initial_state.q[i];
       }
       RCLCPP_INFO(this->get_logger(), "Set initial state with real time robot");
+      RCLCPP_INFO_STREAM(this->get_logger(),
+                         "Initial joint state: ["
+                             << initial_state.q[0] << ", " << initial_state.q[1]
+                             << ", " << initial_state.q[2] << ", "
+                             << initial_state.q[3] << ", " << initial_state.q[4]
+                             << ", " << initial_state.q[5] << ", "
+                             << initial_state.q[6] << "]");
 
       start_flag.store(true);
       if (!realtime_tools::has_realtime_kernel()) {
@@ -840,13 +876,13 @@ private:
     //         << desired_joints_accelerations[6] << "]\n");
   }
 
-  void publish_robot_state_libfranka(const franka::RobotState &state) {
+  void publish_robot_state_libfranka(const franka::RobotState state) {
 
     // Publish robot pose stamped
     geometry_msgs::msg::PoseStamped current_pose;
     // WARN: Verify that this is the right frame considered in simulation
     current_pose.pose = convertMatrixToPose(
-        panda_franka_model.value().pose(franka::Frame::kJoint7, state));
+        panda_franka_model.value().pose(franka::Frame::kFlange, state));
     // current_pose.pose = convertMatrixToPose(state.O_T_EE);
     current_pose.header.stamp = this->now();
     // robot_pose_pub->tryPublish(current_pose);
@@ -855,8 +891,8 @@ private:
     joint_state_to_pub.header.stamp = this->now();
     for (size_t i = 0; i < 7; i++) {
       joint_state_to_pub.position[i] = state.q[i];
-      joint_state_to_pub.position[i] = state.dq[i];
-      joint_state_to_pub.position[i] = state.tau_J[i];
+      joint_state_to_pub.velocity[i] = state.dq[i];
+      joint_state_to_pub.effort[i] = state.tau_J[i];
     }
 
     joint_states_pub->tryPublish(joint_state_to_pub);

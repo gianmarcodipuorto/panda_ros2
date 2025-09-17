@@ -168,6 +168,14 @@ private:
       RCLCPP_INFO(this->get_logger(), "Still waiting current joint state");
     }
     q0 = *joint_state;
+    RCLCPP_INFO_STREAM(this->get_logger(),
+                       "Current joint config (q0): ["
+                           << q0.position[0] << ", " << q0.position[1] << ", "
+                           << q0.position[2] << ", " << q0.position[3] << ", "
+                           << q0.position[4] << ", " << q0.position[5] << ", "
+                           << q0.position[6] << "]");
+
+    std::this_thread::sleep_for(3s);
 
     rclcpp::Time t0 = this->get_clock()->now();
     rclcpp::Duration t = rclcpp::Duration(0, 0);

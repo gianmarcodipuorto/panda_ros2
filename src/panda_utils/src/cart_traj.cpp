@@ -3,6 +3,7 @@
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_utils/constants.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -76,6 +77,9 @@ public:
 
     loop_rate_freq = this->get_parameter("loop_rate_freq").as_double();
 
+    RCLCPP_INFO_STREAM(this->get_logger(),
+                       "Loop rate frequency: " << loop_rate_freq);
+
     auto handle_goal = [this](const rclcpp_action::GoalUUID uuid,
                               std::shared_ptr<const CartTraj::Goal> goal) {
       RCLCPP_INFO(this->get_logger(), "Received goal request");
@@ -129,32 +133,54 @@ public:
         this, panda_interface_names::panda_cart_move_action_name, handle_goal,
         handle_cancel, handle_accepted);
 
-    cmd_pose_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<geometry_msgs::msg::Pose>>(
-        this->create_publisher<geometry_msgs::msg::Pose>(
-            panda_interface_names::panda_pose_cmd_topic_name,
-            panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
+    // cmd_pose_pub = std::make_shared<
+    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Pose>>(
+    //     this->create_publisher<geometry_msgs::msg::Pose>(
+    //         panda_interface_names::panda_pose_cmd_topic_name,
+    //         panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
+    //
+    // cmd_twist_pub = std::make_shared<
+    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Twist>>(
+    //     this->create_publisher<geometry_msgs::msg::Twist>(
+    //         panda_interface_names::panda_twist_cmd_topic_name,
+    //         panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
+    //
+    // cmd_accel_pub = std::make_shared<
+    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Accel>>(
+    //     this->create_publisher<geometry_msgs::msg::Accel>(
+    //         panda_interface_names::panda_accel_cmd_topic_name,
+    //         panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
 
-    cmd_twist_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<geometry_msgs::msg::Twist>>(
-        this->create_publisher<geometry_msgs::msg::Twist>(
-            panda_interface_names::panda_twist_cmd_topic_name,
-            panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
+    cmd_pose_pub = this->create_publisher<geometry_msgs::msg::Pose>(
+        panda_interface_names::panda_pose_cmd_topic_name,
+        panda_interface_names::DEFAULT_TOPIC_QOS());
 
-    cmd_accel_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<geometry_msgs::msg::Accel>>(
-        this->create_publisher<geometry_msgs::msg::Accel>(
-            panda_interface_names::panda_accel_cmd_topic_name,
-            panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
+    cmd_twist_pub = this->create_publisher<geometry_msgs::msg::Twist>(
+        panda_interface_names::panda_twist_cmd_topic_name,
+        panda_interface_names::DEFAULT_TOPIC_QOS());
+
+    cmd_accel_pub = this->create_publisher<geometry_msgs::msg::Accel>(
+        panda_interface_names::panda_accel_cmd_topic_name,
+        panda_interface_names::DEFAULT_TOPIC_QOS());
+
+    cartesian_cmd_pub =
+        this->create_publisher<panda_interfaces::msg::CartesianCommand>(
+            "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS());
   }
 
 private:
-  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Pose>
-      cmd_pose_pub;
-  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Twist>
-      cmd_twist_pub;
-  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Accel>
-      cmd_accel_pub;
+  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Pose>
+  //     cmd_pose_pub;
+  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Twist>
+  //     cmd_twist_pub;
+  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Accel>
+  //     cmd_accel_pub;
+
+  rclcpp::Publisher<panda_interfaces::msg::CartesianCommand>::SharedPtr
+      cartesian_cmd_pub;
+  rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr cmd_pose_pub;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_twist_pub;
+  rclcpp::Publisher<geometry_msgs::msg::Accel>::SharedPtr cmd_accel_pub;
 
   rclcpp_action::Server<CartTraj>::SharedPtr action_traj_server;
 
@@ -165,20 +191,23 @@ private:
 
     if (realtime_tools::has_realtime_kernel() &&
         !this->get_parameter("use_sim_time").as_bool()) {
-      if (!realtime_tools::configure_sched_fifo(97)) {
-        RCLCPP_WARN(this->get_logger(),
-                    "Execute thread: Could not set SCHED_FIFO."
-                    " Running with default scheduler.");
+      if (realtime_tools::has_realtime_kernel()) {
+        if (!realtime_tools::configure_sched_fifo(97)) {
+          RCLCPP_WARN(this->get_logger(),
+                      "Execute thread: Could not set SCHED_FIFO."
+                      " Running with default scheduler.");
+        } else {
+          RCLCPP_INFO(this->get_logger(),
+                      "Execute thread: Set SCHED_FIFO priority.");
+        }
+      } else if (this->get_parameter("use_sim_time").as_bool()) {
+        RCLCPP_INFO(this->get_logger(), "Simulation: realtime not requested");
       } else {
-        RCLCPP_INFO(this->get_logger(),
-                    "Execute thread: Set SCHED_FIFO priority.");
+        RCLCPP_WARN(this->get_logger(),
+                    "Execute thread: No real-time kernel detected.");
       }
-    } else if (this->get_parameter("use_sim_time").as_bool()) {
-      RCLCPP_INFO(this->get_logger(), "Simulation: realtime not requested");
-    } else {
-      RCLCPP_WARN(this->get_logger(),
-                  "Execute thread: No real-time kernel detected.");
     }
+
     rclcpp::Rate loop_rate(loop_rate_freq, this->get_clock());
 
     RCLCPP_INFO(this->get_logger(), "Getting goal");
@@ -221,6 +250,7 @@ private:
     geometry_msgs::msg::Pose cmd_pose;
     geometry_msgs::msg::Twist cmd_twist;
     geometry_msgs::msg::Accel cmd_accel;
+    panda_interfaces::msg::CartesianCommand cmd_cartesian;
 
     RCLCPP_DEBUG(this->get_logger(), "Entering while");
     while (rclcpp::ok() && t < traj_duration) {
@@ -313,11 +343,19 @@ private:
 
       RCLCPP_DEBUG_ONCE(this->get_logger(), "Publish command");
 
-      cmd_pose_pub->tryPublish(cmd_pose);
-      if (!goal->only_position) {
-        cmd_twist_pub->tryPublish(cmd_twist);
-        cmd_accel_pub->tryPublish(cmd_accel);
-      }
+      // cmd_pose_pub->tryPublish(cmd_pose);
+      // cmd_pose_pub->publish(cmd_pose);
+      // if (!goal->only_position) {
+      //   // cmd_twist_pub->tryPublish(cmd_twist);
+      //   // cmd_accel_pub->tryPublish(cmd_accel);
+      //   cmd_twist_pub->publish(cmd_twist);
+      //   cmd_accel_pub->publish(cmd_accel);
+      // }
+
+      cmd_cartesian.pose = cmd_pose;
+      cmd_cartesian.twist = cmd_twist;
+      cmd_cartesian.accel = cmd_accel;
+      cartesian_cmd_pub->publish(cmd_cartesian);
 
       // Sleep
       //
@@ -342,17 +380,17 @@ int main(int argc, char **argv) {
   if (!realtime_tools::has_realtime_kernel()) {
     RCLCPP_ERROR(node->get_logger(), "No real time kernel");
   }
-  if (!node->get_parameter("use_sim_time").as_bool()) {
-
-    if (!realtime_tools::configure_sched_fifo(95)) {
-      RCLCPP_ERROR(node->get_logger(),
-                   "Couldn't configure real time priority for current node");
-    } else {
-      RCLCPP_INFO(node->get_logger(), "Set real time priority");
-    }
-  } else {
-    RCLCPP_INFO(node->get_logger(), "Simulation: realtime not requested");
-  }
+  // if (!node->get_parameter("use_sim_time").as_bool()) {
+  //
+  //   if (!realtime_tools::configure_sched_fifo(95)) {
+  //     RCLCPP_ERROR(node->get_logger(),
+  //                  "Couldn't configure real time priority for current node");
+  //   } else {
+  //     RCLCPP_INFO(node->get_logger(), "Set real time priority");
+  //   }
+  // } else {
+  //   RCLCPP_INFO(node->get_logger(), "Simulation: realtime not requested");
+  // }
 
   rclcpp::spin(node);
   rclcpp::shutdown();

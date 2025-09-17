@@ -185,6 +185,8 @@ def generate_launch_description():
         package='panda_utils',
         executable='impedance_controller',
         name='impedance_controller',
+        # prefix=["gdbserver localhost:3000"],
+        prefix=['kitty -e gdb -ex run --args'],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'Kp': LaunchConfiguration('controller_kp'),

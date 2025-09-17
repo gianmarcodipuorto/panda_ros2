@@ -39,6 +39,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "./action/StopTraj.action"
   "./srv/WristContact.srv"
   "./msg/WristContact.msg"
+  "./msg/CartesianCommand.msg"
   DEPENDENCIES tf2_msgs geometry_msgs std_msgs
 )
 

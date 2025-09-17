@@ -3,3 +3,6 @@ install
 log
 .cache
 bags
+.vscode
+.new.txt
+launch.json

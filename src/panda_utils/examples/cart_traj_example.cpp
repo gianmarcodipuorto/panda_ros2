@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
+#include <rclcpp/executor.hpp>
+#include <rclcpp/executors.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/utilities.hpp>
@@ -131,8 +133,9 @@ int main(int argc, char *argv[]) {
               << ") and desired pose for cartesian trajectory; pose position: ["
               << desired_pose.position.x << ", " << desired_pose.position.y
               << ", " << desired_pose.position.z << "]. pose orientaion: ["
-              << desired_pose.orientation.w << ", " << desired_pose.orientation.x
-              << ", " << desired_pose.orientation.y << ", "
+              << desired_pose.orientation.w << ", "
+              << desired_pose.orientation.x << ", "
+              << desired_pose.orientation.y << ", "
               << desired_pose.orientation.z << "].");
     }
     break;
@@ -155,7 +158,17 @@ int main(int argc, char *argv[]) {
   auto cart_traj_action_client = rclcpp_action::create_client<CartTraj>(
       node, panda_interface_names::panda_cart_move_action_name);
 
-  geometry_msgs::msg::PoseStamped initial_pose;
+  auto sub_node = std::make_shared<rclcpp::Node>("sub_node");
+  geometry_msgs::msg::PoseStamped::SharedPtr initial_pose;
+  auto pose_sub =
+      sub_node->create_subscription<geometry_msgs::msg::PoseStamped>(
+          panda_interface_names::panda_pose_state_topic_name,
+          panda_interface_names::DEFAULT_TOPIC_QOS(),
+          [&initial_pose](
+              const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+            initial_pose = msg;
+          });
+
   geometry_msgs::msg::PoseStamped current_desired_pose;
 
   RCLCPP_INFO(node->get_logger(), "Waiting for servers...");
@@ -167,31 +180,36 @@ int main(int argc, char *argv[]) {
     RCLCPP_INFO_STREAM(node->get_logger(), "Getting initial pose, press ENTER");
     std::cin.ignore();
 
-    rclcpp::wait_for_message<geometry_msgs::msg::PoseStamped>(
-        initial_pose, node, panda_interface_names::panda_pose_state_topic_name,
-        10s);
+    initial_pose = nullptr;
+
+    std::thread{[sub_node]() {
+      rclcpp::spin(sub_node);
+      rclcpp::shutdown();
+    }}.detach();
+
+    while (!initial_pose && rclcpp::ok()) {
+      RCLCPP_INFO_STREAM(node->get_logger(), "Waiting pose state");
+      rclcpp::sleep_for(1s);
+    }
+    if (!rclcpp::ok()) {
+      rclcpp::shutdown();
+      return -1;
+    }
 
     RCLCPP_INFO_STREAM(node->get_logger(),
                        "Initial pose: ["
-                           << initial_pose.pose.position.x << ", "
-                           << initial_pose.pose.position.y << ", "
-                           << initial_pose.pose.position.z
+                           << initial_pose->pose.position.x << ", "
+                           << initial_pose->pose.position.y << ", "
+                           << initial_pose->pose.position.z
                            << "], Orientation (w, x, y, z): ["
-                           << initial_pose.pose.orientation.w << ", "
-                           << initial_pose.pose.orientation.x << ", "
-                           << initial_pose.pose.orientation.y << ", "
-                           << initial_pose.pose.orientation.z << "]");
+                           << initial_pose->pose.orientation.w << ", "
+                           << initial_pose->pose.orientation.x << ", "
+                           << initial_pose->pose.orientation.y << ", "
+                           << initial_pose->pose.orientation.z << "]");
   }
-
 
   // Calling action server for the true trajectory commanded
   {
-    RCLCPP_INFO_STREAM(node->get_logger(), "Getting initial pose, press ENTER");
-    std::cin.ignore();
-
-    rclcpp::wait_for_message<geometry_msgs::msg::PoseStamped>(
-        initial_pose, node, panda_interface_names::panda_pose_state_topic_name,
-        10s);
 
     RCLCPP_INFO_STREAM(node->get_logger(),
                        "Ready to call action server for the true desired "
@@ -199,10 +217,10 @@ int main(int argc, char *argv[]) {
     std::cin.ignore();
 
     panda_interfaces::action::CartTraj_Goal cart_goal;
-    cart_goal.initial_pose = initial_pose.pose;
+    cart_goal.initial_pose = initial_pose->pose;
     if (mode == std::string{"delta"}) {
 
-      desired_pose = initial_pose.pose;
+      desired_pose = initial_pose->pose;
 
       desired_pose.position.x = desired_pose.position.x + delta_pose.position.x;
       desired_pose.position.y = desired_pose.position.y + delta_pose.position.y;
@@ -241,7 +259,8 @@ int main(int argc, char *argv[]) {
         };
 
     using namespace std::chrono_literals;
-    RCLCPP_INFO_STREAM(node->get_logger(), "Sleeping for 2s and then launching action");
+    RCLCPP_INFO_STREAM(node->get_logger(),
+                       "Sleeping for 2s and then launching action");
     std::this_thread::sleep_for(2s);
     RCLCPP_INFO_STREAM(node->get_logger(), "LAUNCHING ACTION");
 

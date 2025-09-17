@@ -81,6 +81,10 @@ int main(int argc, char **argv) {
             << desired_config.positions[6] << ", "
             << "], press ENTER");
     std::cin.ignore();
+    if (!rclcpp::ok()) {
+      rclcpp::shutdown();
+      return -1;
+    }
 
     panda_interfaces::action::JointTraj_Goal joint_traj_goal;
 
