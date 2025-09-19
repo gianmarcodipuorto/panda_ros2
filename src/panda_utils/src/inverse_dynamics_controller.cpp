@@ -508,14 +508,14 @@ public:
           print_debug.mut.unlock();
         }
 
-        // joint_state_to_pub.header.stamp = this->now();
-        // for (size_t i = 0; i < 7; i++) {
-        //   joint_state_to_pub.position[i] = state.q[i];
-        //   joint_state_to_pub.velocity[i] = state.dq[i];
-        //   joint_state_to_pub.effort[i] = state.tau_J[i];
-        // }
-        //
-        // joint_states_pub->tryPublish(joint_state_to_pub);
+        joint_state_to_pub.header.stamp = this->now();
+        for (size_t i = 0; i < 7; i++) {
+          joint_state_to_pub.position[i] = state.q[i];
+          joint_state_to_pub.velocity[i] = state.dq[i];
+          joint_state_to_pub.effort[i] = state.tau_J[i];
+        }
+
+        joint_states_pub->try_publish(joint_state_to_pub);
 
         return franka::Torques(tau);
       };

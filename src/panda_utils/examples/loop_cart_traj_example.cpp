@@ -206,7 +206,7 @@ int main(int argc, char **argv) {
       generate_triangle_task(initial_pose.pose.position.x,
                              initial_pose.pose.position.y,
                              initial_pose.pose.position.z, 0.1, 0.1,
-                             triangle_orient.normalized(), 30.0);
+                             triangle_orient.normalized(), 15.0);
 
   for (size_t i = 0; i < triangle_task_goal.desired_poses.size(); i++) {
     RCLCPP_INFO_STREAM(main_node->get_logger(),
@@ -248,6 +248,7 @@ int main(int argc, char **argv) {
       rclcpp::ok()) {
     if (!rclcpp::ok()) {
       loop_traj_action_client->async_cancel_goal(future_goal_handle.get());
+      rclcpp::shutdown();
     }
     RCLCPP_ERROR_STREAM(main_node->get_logger(), "ERROR, GOAL NOT SENT");
     return -1;
@@ -259,6 +260,7 @@ int main(int argc, char **argv) {
       rclcpp::ok()) {
     if (!rclcpp::ok()) {
       loop_traj_action_client->async_cancel_goal(future_goal_handle.get());
+      rclcpp::shutdown();
     }
     RCLCPP_ERROR_STREAM(main_node->get_logger(), "ERROR, NO RESULT");
     return -1;
@@ -270,6 +272,7 @@ int main(int argc, char **argv) {
       rclcpp::ok()) {
     if (!rclcpp::ok()) {
       loop_traj_action_client->async_cancel_goal(future_goal_handle.get());
+      rclcpp::shutdown();
     }
     RCLCPP_ERROR_STREAM(main_node->get_logger(),
                         "ERROR, CART TRAJECTORY NOT SUCCEEDED");

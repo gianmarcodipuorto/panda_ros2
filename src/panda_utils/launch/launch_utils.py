@@ -187,7 +187,8 @@ def generate_launch_description():
         executable='impedance_controller',
         name='impedance_controller',
         # prefix=["gdbserver localhost:3000"],
-        prefix=['taskset -c 10 kitty -e gdb -ex run --args'],
+        # prefix=['taskset -c 10 kitty -e gdb -ex run --args'],
+        prefix=['taskset -c 10'],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'Kp': LaunchConfiguration('controller_kp'),

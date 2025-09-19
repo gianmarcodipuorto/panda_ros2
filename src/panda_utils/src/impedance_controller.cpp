@@ -753,7 +753,6 @@ public:
       Eigen::Vector<double, 6> current_twist;
       Eigen::Vector<double, 6> error_twist;
       Eigen::Vector<double, 7> y;
-      Eigen::Vector<double, 7> last_y = Eigen::Vector<double, 7>::Zero();
       Eigen::Vector<double, 7> tau_ext;
       Eigen::Vector<double, 6> h_e;
       Pose current_pose;
@@ -779,11 +778,9 @@ public:
       RCLCPP_INFO(this->get_logger(), "low pass alpha: %f", low_pass_alpha);
 
       robot_control_callback =
-          [this, KP, KD, MD, MD_1, k_max, eps, ident_transform, get_jacob,
-           &current_twist, &error_twist, &y, &current_pose, &error_quat,
-           &error_pose_vec, &mass_matrix_raw, low_pass_alpha,
-           &last_y](const franka::RobotState &state,
-                    franka::Duration dt) -> franka::Torques {
+          [this, KP, KD, MD, MD_1, k_max, eps, ident_transform,
+           get_jacob](const franka::RobotState &state,
+                      franka::Duration dt) -> franka::Torques {
         if (!(start_flag.load() && rclcpp::ok())) {
           // Send last commanded joint effort command
           return franka::MotionFinished(franka::Torques(state.tau_J_d));
@@ -835,6 +832,11 @@ public:
           }
         }
         // last_joints_speed = current_joints_speed;
+
+        Pose current_pose;
+        Eigen::Quaterniond error_quat{};
+        Eigen::Vector<double, 6> error_pose_vec{};
+        std::array<double, 49> mass_matrix_raw;
 
         // Get current pose and jacobian according to stiffness or flange
         // frame
@@ -932,6 +934,9 @@ public:
         // - tau_f = torque required to compensate motor friction
         //
 
+        Eigen::Vector<double, 7> y;
+        Eigen::Vector<double, 6> current_twist;
+        Eigen::Vector<double, 6> error_twist;
         {
           // std::lock_guard<std::mutex> lock(desired_twist_mutex);
           // RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(),
@@ -1093,7 +1098,7 @@ public:
             debug_pub.data().error_pose_vec(3) = 1.0;
             debug_pub.data().tau_d_calculated = tau;
             debug_pub.data().tau_d_last = state.tau_J_d;
-            debug_pub.data().y = mass_matrix * y;
+            debug_pub.data().y = y;
 
             // Robot state
             debug_pub.data().robot_state->q = state.q;
@@ -1109,19 +1114,19 @@ public:
           debug_pub.data().mut.unlock();
         }
 
-        // PoseStamped pose_stamp;
-        // pose_stamp.header.stamp = this->now();
-        // pose_stamp.pose = current_pose;
-        // robot_pose_pub->try_publish(pose_stamp);
+        PoseStamped pose_stamp;
+        pose_stamp.header.stamp = this->now();
+        pose_stamp.pose = current_pose;
+        robot_pose_pub->try_publish(pose_stamp);
         //
-        joint_state_to_pub.header.stamp = this->now();
-        for (size_t i = 0; i < joint_state_to_pub.position.size(); i++) {
-          joint_state_to_pub.position[i] = state.q[i];
-          joint_state_to_pub.velocity[i] = state.dq[i];
-          joint_state_to_pub.effort[i] = state.tau_J[i];
-        }
-
-        joint_states_pub->try_publish(joint_state_to_pub);
+        // joint_state_to_pub.header.stamp = this->now();
+        // for (size_t i = 0; i < joint_state_to_pub.position.size(); i++) {
+        //   joint_state_to_pub.position[i] = state.q[i];
+        //   joint_state_to_pub.velocity[i] = state.dq[i];
+        //   joint_state_to_pub.effort[i] = state.tau_J[i];
+        // }
+        //
+        // joint_states_pub->try_publish(joint_state_to_pub);
 
         RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "Sent command first time");
         return franka::Torques(tau);
@@ -1238,6 +1243,14 @@ public:
       // Try-catch version
       control_thread = std::thread{[this]() {
         // Configuring real time thread
+        if (realtime_tools::configure_sched_fifo(99)) {
+          RCLCPP_INFO(this->get_logger(), "Set real time priority");
+        } else {
+          RCLCPP_ERROR(this->get_logger(),
+                       "Real time priority not set, shutting down");
+          start_flag.store(false);
+          rclcpp::shutdown();
+        }
         try {
 
           // EE to K transform thread
@@ -1384,16 +1397,6 @@ public:
             RCLCPP_INFO(this->get_logger(), "Shutdown print control thread");
           }}.detach();
 
-          if (realtime_tools::configure_sched_fifo(99)) {
-            RCLCPP_INFO(this->get_logger(), "Set real time priority");
-          } else {
-            RCLCPP_ERROR(this->get_logger(),
-                         "Real time priority not set, shutting down");
-            start_flag.store(false);
-            rclcpp::shutdown();
-          }
-          RCLCPP_INFO_STREAM(this->get_logger(),
-                             "Starting control thread with real time robot");
           panda_franka->control(robot_control_callback);
         } catch (const franka::Exception &ex) {
           start_flag.store(false);
@@ -1592,6 +1595,7 @@ private:
   Eigen::Vector<double, 7> last_joints_speed = Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 7> current_joints_speed =
       Eigen::Vector<double, 7>::Zero();
+  Eigen::Vector<double, 7> last_y = Eigen::Vector<double, 7>::Zero();
 
   panda_interfaces::msg::CartesianCommand desired_cartesian_cmd{};
   std::optional<panda_interfaces::msg::CartesianCommand>
