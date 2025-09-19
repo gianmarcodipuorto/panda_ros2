@@ -267,7 +267,7 @@ def generate_launch_description():
         # external_force_estimator,
 
         # clik_cmd_pub,
-        inverse_dynamics_controller,
+        # inverse_dynamics_controller,
         # publish_tfs_and_estimate_forces
         # joint_traj_server,
     ])

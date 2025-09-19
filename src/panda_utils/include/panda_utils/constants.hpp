@@ -1,5 +1,6 @@
 #pragma once
 
+#include "franka/robot.h"
 #include "robot.hpp"
 #include <rclcpp/qos.hpp>
 #include <string>
@@ -14,6 +15,9 @@ const JointType PANDA_JOINT_TYPES[7] = {
     JointType::REVOLUTE, JointType::REVOLUTE, JointType::REVOLUTE,
     JointType::REVOLUTE, JointType::REVOLUTE, JointType::REVOLUTE,
     JointType::REVOLUTE};
+
+extern const rclcpp::Duration max_tf_age;
+extern const double robot_radius_area; // meters
 
 namespace panda_interface_names {
 

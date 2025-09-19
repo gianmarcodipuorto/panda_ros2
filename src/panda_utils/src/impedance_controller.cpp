@@ -10,6 +10,7 @@
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
+#include "image_processing/constants.hpp"
 #include "multibody/fwd.hpp"
 #include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_interfaces/msg/double_array_stamped.hpp"
@@ -24,6 +25,7 @@
 #include "panda_utils/debug_publisher.hpp"
 #include "panda_utils/robot.hpp"
 #include "panda_utils/robot_model.hpp"
+#include "panda_utils/utils_func.hpp"
 #include "realtime_tools/realtime_tools/realtime_helpers.hpp"
 #include "realtime_tools/realtime_tools/realtime_publisher.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -102,6 +104,22 @@ auto DEFAULT_URDF_PATH =
 //   franka::RobotState robot_state;
 //   std::array<double, 7> gravity;
 // };
+
+struct human_presence {
+  const double MAX_TIME = 1.0;
+  std::shared_mutex mut;
+  bool human_present = false;
+  rclcpp::Duration time_present = rclcpp::Duration::from_seconds(0.0);
+  std::optional<std::string> contact_wrist{std::nullopt};
+
+  void normalize_time() {
+    if (time_present.seconds() > MAX_TIME) {
+      time_present = rclcpp::Duration::from_seconds(MAX_TIME);
+    } else if (time_present.seconds() < 0.0) {
+      time_present = rclcpp::Duration::from_seconds(0.0);
+    }
+  }
+};
 
 enum class Mode {
   // Simulation only mode
@@ -362,6 +380,16 @@ public:
     this->get_parameter<std::vector<double>>("world_base_link",
                                              world_base_link);
 
+    franka_frame_enum_to_link_name[franka::Frame::kJoint1] = "fr3_link1";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint2] = "fr3_link2";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint3] = "fr3_link3";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint4] = "fr3_link4";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint5] = "fr3_link5";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint6] = "fr3_link6";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint7] = "fr3_link7";
+    franka_frame_enum_to_link_name[franka::Frame::kFlange] =
+        "fr3_link8"; // Typically end-effector name
+
     // Define mode of operation
     if (use_robot) {
       mode = Mode::franka;
@@ -614,6 +642,7 @@ public:
     debug_pub.create_pubs(shared_from_this(),
                           panda_interface_names::CONTROLLER_PUBLISHER_QOS());
 
+    // Reconfigure parameters
     Kp = this->get_parameter("Kp").as_double();
     Kd = this->get_parameter("Kd").as_double();
     Md = this->get_parameter("Md").as_double();
@@ -649,77 +678,26 @@ public:
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Connected to robot with ip "
                              << this->get_parameter("robot_ip").as_string());
-      double load = 0.553455;
-      std::array F_x_Cload{-0.010328, 0.000068, 0.148159};
-      std::array load_inertia{0.02001,        0.000006527121, -0.0004590,
-                              0.000006527121, 0.01936,        0.000003371038,
-                              -0.0004590,     0.000003371038, 0.002245};
+      // double load = 0.553455;
+      // std::array F_x_Cload{-0.010328, 0.000068, 0.148159};
+      // std::array load_inertia{0.02001,        0.000006527121, -0.0004590,
+      //                         0.000006527121, 0.01936,        0.000003371038,
+      //                         -0.0004590,     0.000003371038, 0.002245};
+
       // panda_franka->setLoad(load, F_x_Cload, load_inertia);
       // RCLCPP_INFO_STREAM(this->get_logger(), "Set load on real robot");
+
       panda_franka_model = panda_franka.value().loadModel();
       // Debug prints before activation
       print_initial_franka_state(panda_franka->readOnce(),
                                  panda_franka_model.value(),
                                  this->get_logger());
 
-      // Getting initial pose as the current one
-      desired_pose_raw = get_pose(panda_franka_model.value().pose(
-          franka::Frame::kFlange, panda_franka->readOnce()));
-      desired_pose = std::make_shared<Pose>(desired_pose_raw);
-
-      desired_cartesian_cmd.pose = desired_pose_raw;
-      desired_twist = desired_cartesian_cmd.twist;
-      desired_accel = desired_cartesian_cmd.accel;
-
-      desired_twist_vec[0] = 0.0;
-      desired_twist_vec[1] = 0.0;
-      desired_twist_vec[2] = 0.0;
-      desired_twist_vec[3] = 0.0;
-      desired_twist_vec[4] = 0.0;
-      desired_twist_vec[5] = 0.0;
-
-      desired_accel_vec[0] = 0.0;
-      desired_accel_vec[1] = 0.0;
-      desired_accel_vec[2] = 0.0;
-      desired_accel_vec[3] = 0.0;
-      desired_accel_vec[4] = 0.0;
-      desired_accel_vec[5] = 0.0;
-
-      desired_cartesian_box.set(desired_cartesian_cmd);
-
-      RCLCPP_INFO_STREAM(this->get_logger(),
-                         "Desired pose is: ["
-                             << desired_pose->position.x << ", "
-                             << desired_pose->position.y << ", "
-                             << desired_pose->position.z << "], ["
-                             << desired_pose->orientation.w << ", "
-                             << desired_pose->orientation.x << ", "
-                             << desired_pose->orientation.y << ", "
-                             << desired_pose->orientation.z << "]");
-
-      RCLCPP_INFO_STREAM(
-          this->get_logger(),
-          "Desired accel is: ["
-              << desired_accel.linear.x << ", " << desired_accel.linear.y
-              << ", " << desired_accel.linear.z << "], ["
-              << desired_accel.angular.x << ", " << desired_accel.angular.y
-              << ", " << desired_accel.angular.z << "]");
-
-      RCLCPP_INFO_STREAM(
-          this->get_logger(),
-          "Desired twist is: ["
-              << desired_twist.linear.x << ", " << desired_twist.linear.y
-              << ", " << desired_twist.linear.z << "], ["
-              << desired_twist.angular.x << ", " << desired_twist.angular.y
-              << ", " << desired_twist.angular.z << "]");
-
       Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp, Kp, Kp};
-      // Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp, Kp * 3, Kp * 3, Kp * 4};
       Eigen::Matrix<double, 6, 6> KP = Eigen::Matrix<double, 6, 6>::Identity();
       KP.diagonal() = KP_;
 
       Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd, Kd, Kd};
-      // Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd, Kd * 3, Kd * 3, Kd * 4};
       Eigen::Matrix<double, 6, 6> KD = Eigen::Matrix<double, 6, 6>::Identity();
       KD.diagonal() = KD_;
 
@@ -727,7 +705,6 @@ public:
       Eigen::Matrix<double, 6, 6> MD = Eigen::Matrix<double, 6, 6>::Identity();
       MD.diagonal() = MD_;
       Eigen::Matrix<double, 6, 6> MD_1 = MD.inverse();
-      RCLCPP_INFO_STREAM(this->get_logger(), MD_1);
 
       // Coefficient for dynamic lambda damping
       double alpha = this->get_parameter("alpha").as_double();
@@ -750,32 +727,12 @@ public:
             return get_jacobian(this->panda_franka_model->zeroJacobian(
                 franka::Frame::kFlange, state));
           };
-      Eigen::Vector<double, 6> current_twist;
-      Eigen::Vector<double, 6> error_twist;
-      Eigen::Vector<double, 7> y;
-      Eigen::Vector<double, 7> tau_ext;
-      Eigen::Vector<double, 6> h_e;
-      Pose current_pose;
-      // Eigen::Matrix<double, 6, 7> jacobian =
-      //     Eigen::Matrix<double, 6, 7>::Zero();
-      Eigen::Vector<double, 7> current_joints_config_vec;
-      Eigen::Quaterniond error_quat{};
-      Eigen::Vector<double, 6> error_pose_vec{};
-      std::array<double, 49> mass_matrix_raw;
-      std::array<double, 7> coriolis_raw;
-      Pose desired_pose;
-      Eigen::Vector<double, 6> local_current_twist_vec;
-      Eigen::Vector<double, 6> local_current_accel_vec;
 
       joint_state_to_pub.position.resize(7);
       joint_state_to_pub.velocity.resize(7);
       joint_state_to_pub.effort.resize(7);
       joint_state_to_pub.name = std::vector<std::string>{
           "joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"};
-
-      // Low pass filter alpha
-      double low_pass_alpha = low_pass_filter_alpha(100.0, 0.001);
-      RCLCPP_INFO(this->get_logger(), "low pass alpha: %f", low_pass_alpha);
 
       robot_control_callback =
           [this, KP, KD, MD, MD_1, k_max, eps, ident_transform,
@@ -826,6 +783,7 @@ public:
             current_joints_speed[i] = franka::lowpassFilter(
                 dt.toSec(), state.dq[i], current_joints_speed[i], 15.0);
           }
+
         } else {
           for (int i = 0; i < 7; i++) {
             current_joints_speed[i] = state.dq[i];
@@ -912,17 +870,20 @@ public:
         lambda = (sigma_min >= eps ? 0.0 : lambda);
         Eigen::Matrix<double, 7, 6> jacobian_pinv =
             compute_jacob_pseudoinv(jacobian, lambda);
-        // Eigen::Matrix<double, 7, 6> jacobian_pinv =
-        //     jacobian.completeOrthogonalDecomposition().pseudoInverse();
 
-        RCLCPP_INFO_STREAM_ONCE(this->get_logger(),
-                                "jacob pinv: " << jacobian_pinv);
-
-        Eigen::Map<const Eigen::Vector<double, 7>> tau_ext(
+        // Getting external tau
+        Eigen::Map<const Eigen::Vector<double, 7>> tau_ext_measured(
             state.tau_ext_hat_filtered.data());
 
-        Eigen::Map<const Eigen::Vector<double, 6>> h_e(
+        Eigen::Map<const Eigen::Vector<double, 6>> h_e_measured(
             state.O_F_ext_hat_K.data());
+
+        if (dt.toSec() == 0.0) {
+          initial_extern_tau = tau_ext_measured;
+          initial_h_e = h_e_measured;
+        }
+        extern_tau = tau_ext_measured - initial_extern_tau;
+        h_e = h_e_measured - initial_h_e;
 
         // Calculate quantities for control
         // Calculated through libfranka lib for better accuracy
@@ -954,16 +915,16 @@ public:
             y = jacobian_pinv * MD_1 *
                 (
 
-                    -KD * current_twist -
-                    MD *
-                        get_j_dot(get_jacob, current_joints_config_vec,
-                                  current_joints_speed) *
-                        current_joints_speed
-                    // - h_e
+                    -KD * current_twist
+                    // -
+                    //   MD *
+                    //       get_j_dot(get_jacob, current_joints_config_vec,
+                    //                 current_joints_speed) *
+                    //       current_joints_speed
+                    - h_e
 
                 );
           } else {
-
             y = jacobian_pinv * MD_1 *
                 (
 
@@ -974,7 +935,7 @@ public:
                     //       get_j_dot(get_jacob, current_joints_config_vec,
                     //                 current_joints_speed) *
                     //       current_joints_speed
-                    // - h_e
+                    - h_e
 
                 );
           }
@@ -987,10 +948,8 @@ public:
         }
         last_y = y;
 
-        // Eigen::Vector<double, 7> control_input_vec = mass_matrix * y +
-        // coriolis;
         Eigen::Vector<double, 7> control_input_vec =
-            mass_matrix * y + coriolis + tau_ext;
+            mass_matrix * y + coriolis + tau_ext_measured;
 
         // Clamp tau
         clamp_control(control_input_vec);
@@ -1055,8 +1014,8 @@ public:
                   << ", Desired accel: " << desired_accel_vec
                   << ", Jacobian pinv: " << jacobian_pinv << ", error twist: "
                   << error_twist << ", error pose: " << error_pose_vec
-                  << ", tau_ext: " << tau_ext << ", coriolis: " << coriolis
-                  << ", joint vel: " << current_joints_speed
+                  << ", extern_tau: " << extern_tau << ", coriolis: "
+                  << coriolis << ", joint vel: " << current_joints_speed
                   << ", jacobian: " << jacobian
                   << ", current joint pos: " << current_joints_config_vec);
 
@@ -1073,16 +1032,17 @@ public:
         RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "Filling debug data");
         // Fill struct for TFs prints
 
-        // if (panda_franka_state.mut.try_lock()) {
-        //   panda_franka_state.state = state;
-        //   panda_franka_state.state_time = now;
-        // }
+        if (panda_franka_state.mut.try_lock()) {
+          panda_franka_state.state = state;
+          panda_franka_state.state_time = now;
+          panda_franka_state.mut.unlock();
+        }
 
         if (debug_pub.data().mut.try_lock()) {
 
           try {
-            // debug_pub.data().h_e = h_e;
-            debug_pub.data().tau_ext = tau_ext;
+            debug_pub.data().h_e = h_e;
+            debug_pub.data().tau_ext = extern_tau;
             // debug_pub.data().lambda = lambda;
             // debug_pub.data().sigma_min = sigma_min;
             debug_pub.data().current_twist = current_twist;
@@ -1170,28 +1130,7 @@ public:
     switch (mode) {
     case Mode::franka: {
 
-      geometry_msgs::msg::TransformStamped world_to_base_transform_static;
-      world_to_base_transform_static.header.stamp = this->now();
-      world_to_base_transform_static.header.frame_id = "world";
-      world_to_base_transform_static.child_frame_id = "fr3_link0";
-
-      // Assuming world_base_link parameter order is x, y, z, w, x, y, z for
-      // quaternion
-      world_to_base_transform_static.transform.translation.x =
-          world_base_link[0];
-      world_to_base_transform_static.transform.translation.y =
-          world_base_link[1];
-      world_to_base_transform_static.transform.translation.z =
-          world_base_link[2];
-
-      world_to_base_transform_static.transform.rotation.w = world_base_link[3];
-      world_to_base_transform_static.transform.rotation.x = world_base_link[4];
-      world_to_base_transform_static.transform.rotation.y = world_base_link[5];
-      world_to_base_transform_static.transform.rotation.z = world_base_link[6];
-
-      static_tf_broadcaster->sendTransform(world_to_base_transform_static);
-      RCLCPP_INFO(this->get_logger(),
-                  "Published static world -> fr3_link0 transform.");
+      publish_static_transforms();
 
       if (!realtime_tools::has_realtime_kernel()) {
         RCLCPP_ERROR(this->get_logger(),
@@ -1199,9 +1138,45 @@ public:
         start_flag.store(false);
         rclcpp::shutdown();
       }
-      // Getting initial pose as the current one
+
+      // Initializing control setpoint variables
       desired_pose_raw = get_pose(panda_franka_model.value().pose(
           franka::Frame::kFlange, panda_franka->readOnce()));
+      desired_pose = std::make_shared<Pose>(desired_pose_raw);
+
+      desired_cartesian_cmd.pose = desired_pose_raw;
+      desired_twist = desired_cartesian_cmd.twist;
+      desired_accel = desired_cartesian_cmd.accel;
+
+      desired_twist_vec[0] = 0.0;
+      desired_twist_vec[1] = 0.0;
+      desired_twist_vec[2] = 0.0;
+      desired_twist_vec[3] = 0.0;
+      desired_twist_vec[4] = 0.0;
+      desired_twist_vec[5] = 0.0;
+
+      desired_accel_vec[0] = 0.0;
+      desired_accel_vec[1] = 0.0;
+      desired_accel_vec[2] = 0.0;
+      desired_accel_vec[3] = 0.0;
+      desired_accel_vec[4] = 0.0;
+      desired_accel_vec[5] = 0.0;
+
+      desired_cartesian_box.set(desired_cartesian_cmd);
+
+      // Configuring initial external tau bias
+      Eigen::Map<const Eigen::Vector<double, 7>> initial_tau{
+          panda_franka->readOnce().tau_ext_hat_filtered.data()};
+      initial_extern_tau = initial_tau;
+
+      RCLCPP_INFO_STREAM(this->get_logger(),
+                         "Initial extern tau: " << initial_extern_tau[0] << ", "
+                                                << initial_extern_tau[1] << ", "
+                                                << initial_extern_tau[2] << ", "
+                                                << initial_extern_tau[3] << ", "
+                                                << initial_extern_tau[4] << ", "
+                                                << initial_extern_tau[5] << ", "
+                                                << initial_extern_tau[6]);
 
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Desired pose is: ["
@@ -1227,6 +1202,7 @@ public:
               << desired_twist_vec[2] << "], [" << desired_twist_vec[3] << ", "
               << desired_twist_vec[4] << ", " << desired_twist_vec[5] << "]");
 
+      // Init old quaternion for quaternion continuity
       old_quaternion.w() = desired_pose->orientation.w;
       old_quaternion.x() = desired_pose->orientation.x;
       old_quaternion.y() = desired_pose->orientation.y;
@@ -1291,62 +1267,143 @@ public:
           //                      "Stopped EE_to_K (wrist in touch)
           //                      thread");
           // }}.detach();
-
-          // TFs publisher thread according to fr3 link names
-          // std::thread{[this]() {
-          //   if (realtime_tools::configure_sched_fifo(95)) {
-          //     RCLCPP_INFO(this->get_logger(),
-          //                 "Set real time priority for publisher thread");
-          //   } else {
-          //     RCLCPP_ERROR(this->get_logger(),
-          //                  "Real time priority not set for publisher thread,
-          //                  " "shutting down");
-          //     start_flag.store(false);
-          //     rclcpp::shutdown();
+          // std::thread{[this] {
+          //   // TODO: handle 2 things:
+          //   // Check if base robot link exists
+          //   std::map<std::string, geometry_msgs::msg::TransformStamped>
+          //       robot_links_body_keypoints_tfs;
+          //   std::map<std::string, geometry_msgs::msg::TransformStamped>
+          //       robot_base_joints_tfs;
+          //
+          //   while (!start_flag.load()) {
+          //     std::this_thread::sleep_for(1s);
           //   }
+          //
           //   RCLCPP_INFO_STREAM(this->get_logger(),
-          //                      "Started TFs publisher thread");
+          //                      "Calculate proximity thread started");
+          //
+          //   rclcpp::Time last_time{this->now()};
+          //   rclcpp::Time last_time_print{this->now()};
+          //
           //   while (start_flag.load() && rclcpp::ok()) {
-          //     if (panda_franka_state.mut.try_lock() &&
-          //         panda_franka_model.has_value()) {
-          //       franka::RobotState current_state;
-          //       rclcpp::Time now;
-          //       if (panda_franka_state.state.has_value()) {
-          //         current_state = panda_franka_state.state.value();
-          //         now = panda_franka_state.state_time;
-          //         panda_franka_state.state = std::nullopt;
-          //       } else {
-          //         RCLCPP_ERROR(this->get_logger(), "No available state");
-          //         continue;
+          //
+          //     bool print_every_half_sec =
+          //         (this->now() - last_time_print).seconds() > 0.5;
+          //
+          //     if (tf_buffer->canTransform(robot_base_frame_name, "world",
+          //                                 tf2::TimePointZero)) {
+          //       // Robot base exists, now get the transforms of the body
+          //       // keypoints wrt the base
+          //       auto now = this->now();
+          //       // Clear the map to avoid getting false data
+          //       robot_links_body_keypoints_tfs.clear();
+          //       // Cycle through all the body keypoints frame: get the
+          //       transform
+          //       // if the body frame is relatively new in the tf2 system and
+          //       // obvoiusly exists
+          //       for (auto keypoint_frame_name :
+          //            image_constants::coco_keypoints) {
+          //         try {
+          //           auto keypoint_frame = tf_buffer->lookupTransform(
+          //               keypoint_frame_name, "world", tf2::TimePointZero);
+          //
+          //           if (now - keypoint_frame.header.stamp >= max_tf_age) {
+          //             continue;
+          //           }
+          //         } catch (const tf2::TransformException &ex) {
+          //           RCLCPP_ERROR_STREAM_THROTTLE(
+          //               this->get_logger(), *this->get_clock(), 10000.0,
+          //               "Keypoint transform not found: " << ex.what());
+          //           continue;
+          //         }
+          //
+          //         for (auto robot_frame_name :
+          //              panda_interface_names::panda_link_names) {
+          //           try {
+          //             auto tf = tf_buffer->lookupTransform(robot_frame_name,
+          //                                                  keypoint_frame_name,
+          //                                                  tf2::TimePointZero);
+          //             robot_links_body_keypoints_tfs[robot_frame_name +
+          //             "_to_" +
+          //                                            keypoint_frame_name] =
+          //                                            tf;
+          //           } catch (const tf2::TransformException &ex) {
+          //             // Tf does not exists
+          //           }
+          //         }
           //       }
           //
-          //       int i = 1;
-          //       franka::Frame frame = franka::Frame::kJoint1;
-          //       geometry_msgs::msg::TransformStamped tf_stamped;
-          //       tf2::Transform tf;
-          //       tf_stamped.header.frame_id =
-          //           panda_interface_names::panda_link_names[0];
-          //       while (frame != franka::Frame::kEndEffector) {
-          //         auto transform =
-          //             panda_franka_model->pose(frame, current_state);
-          //         auto pose = get_pose(transform);
-          //         tf2::fromMsg(pose, tf);
-          //         tf_stamped.transform = tf2::toMsg(tf);
-          //         tf_stamped.child_frame_id =
-          //             panda_interface_names::panda_link_names[i];
-          //         tf_broadcaster->sendTransform(tf_stamped);
-          //         frame++;
-          //         i++;
+          //       // Now will check for proximity with the entire robot
+          //       bool human_in_area = false;
+          //       for (std::pair<std::string,
+          //                      geometry_msgs::msg::TransformStamped>
+          //                named_tf : robot_links_body_keypoints_tfs) {
+          //         double dist = geom_utils::distance(named_tf.second);
+          //         if (dist <= robot_radius_area) {
+          //           human_in_area = true;
+          //           break;
+          //         }
           //       }
-          //     } else {
-          //       RCLCPP_ERROR(this->get_logger(),
-          //                    "No robot model or couldnt lock state");
+          //       // Increase the time the human have been seen inside the area
+          //       or
+          //       // decrease if he's not there
+          //       {
+          //         std::lock_guard<std::shared_mutex>
+          //         mutex(presence_state.mut); if (human_in_area) {
+          //           presence_state.time_present += (this->now() - last_time);
+          //         } else {
+          //           presence_state.time_present -= (this->now() - last_time);
+          //         }
+          //         // Normalize the time according to limit
+          //         presence_state.normalize_time();
+          //         if (human_in_area &&
+          //             presence_state.time_present.seconds() >=
+          //                 presence_state.MAX_TIME &&
+          //             !presence_state.human_present) {
+          //           // If human is inside by max time at least then he's
+          //           surely
+          //           // in area
+          //           RCLCPP_INFO_STREAM(this->get_logger(),
+          //                              "The human entered the robot area");
+          //           presence_state.human_present = true;
+          //         } else if (!human_in_area &&
+          //                    presence_state.time_present.seconds() == 0.0 &&
+          //                    presence_state.human_present) {
+          //           RCLCPP_INFO_STREAM(this->get_logger(),
+          //                              "The human left the robot area");
+          //           presence_state.human_present = false;
+          //         }
+          //
+          //         // We leave the mutex property here because we need to
+          //         recall
+          //         // other tfs
+          //
+          //         if (presence_state.human_present) {
+          //           start_flag.store(false);
+          //           RCLCPP_ERROR_STREAM(this->get_logger(),
+          //                               "HUMAN PRESENT IN THE AREA");
+          //         }
+          //       }
           //     }
-          //     std::this_thread::sleep_for(5ms);
+          //
+          //     std::this_thread::sleep_for(10ms);
           //   }
-          //   RCLCPP_INFO_STREAM(this->get_logger(),
-          //                      "Stopped TFs publisher thread");
           // }}.detach();
+
+          // TFs publisher thread according to fr3 link names
+          std::thread{[this]() {
+            if (realtime_tools::configure_sched_fifo(90)) {
+              RCLCPP_INFO(this->get_logger(),
+                          "Set real time priority for publisher thread");
+            } else {
+              RCLCPP_ERROR(this->get_logger(),
+                           "Real time priority not set for publisher thread,"
+                           "shutting down");
+              start_flag.store(false);
+              rclcpp::shutdown();
+            }
+            // tf_publish_loop();
+          }}.detach();
 
           // Debug publisher thread
           std::thread{[this]() {
@@ -1356,33 +1413,19 @@ public:
             //               "Set real time priority for publisher thread");
             // } else {
             //   RCLCPP_ERROR(this->get_logger(),
-            //                "Real time priority not set for publisher thread "
-            //                "shutting down");
+            //                "Real time priority not set for publisher
+            //                thread " "shutting down");
             //   start_flag.store(false);
             //   rclcpp::shutdown();
             // }
-            JointsEffort cmd;
-            PoseStamped pose_debug;
-            TwistStamped twist_debug;
-            AccelStamped accel_debug;
-            panda_interfaces::msg::DoubleStamped double_stamped;
-            panda_interfaces::msg::DoubleArrayStamped arr_stamped;
-            arr_stamped.data.resize(7);
-
             RCLCPP_INFO(this->get_logger(), "Started print control thread");
             while (start_flag.load() && rclcpp::ok()) {
+
               std::this_thread::sleep_for(5ms);
+
               try {
 
                 debug_pub.data().mut.lock();
-                // JOINT VALUES PUBLISHER
-                //////////////////////////////////////////
-                // if (debug_pub.data().robot_state.has_value()) {
-                //   publish_robot_state_libfranka(
-                //       debug_pub.data().robot_state.value());
-                // }
-                //////////////////////////////////////////
-
                 debug_pub.publish(this->now());
 
               } catch (std::exception &ex) {
@@ -1398,7 +1441,9 @@ public:
           }}.detach();
 
           panda_franka->control(robot_control_callback);
+
         } catch (const franka::Exception &ex) {
+
           start_flag.store(false);
           RCLCPP_ERROR_STREAM(this->get_logger(), ex.what());
           rclcpp::shutdown();
@@ -1484,6 +1529,87 @@ public:
     return CallbackReturn::SUCCESS;
   }
 
+  void publish_static_transforms() {
+    geometry_msgs::msg::TransformStamped world_to_base_transform_static;
+    world_to_base_transform_static.header.stamp = this->now();
+    world_to_base_transform_static.header.frame_id = "world";
+    world_to_base_transform_static.child_frame_id = "fr3_link0";
+
+    // Assuming world_base_link parameter order is x, y, z, w, x, y, z for
+    // quaternion
+    world_to_base_transform_static.transform.translation.x = world_base_link[0];
+    world_to_base_transform_static.transform.translation.y = world_base_link[1];
+    world_to_base_transform_static.transform.translation.z = world_base_link[2];
+
+    world_to_base_transform_static.transform.rotation.w = world_base_link[3];
+    world_to_base_transform_static.transform.rotation.x = world_base_link[4];
+    world_to_base_transform_static.transform.rotation.y = world_base_link[5];
+    world_to_base_transform_static.transform.rotation.z = world_base_link[6];
+
+    static_tf_broadcaster->sendTransform(world_to_base_transform_static);
+    RCLCPP_INFO(this->get_logger(),
+                "Published static world -> fr3_link0 transform.");
+  }
+
+  void tf_publish_loop() {
+
+    rclcpp::Rate rate(100.0);
+    franka::RobotState current_state;
+    rclcpp::Time now;
+
+    while (start_flag.load() && rclcpp::ok()) {
+
+      try {
+
+        if (panda_franka_state.mut.try_lock() &&
+            panda_franka_model.has_value()) {
+          if (panda_franka_state.state.has_value()) {
+            current_state = panda_franka_state.state.value();
+            now = panda_franka_state.state_time;
+            panda_franka_state.state = std::nullopt;
+          }
+        }
+
+        rclcpp::Time now = this->now();
+
+        tf2::Transform prev_abs_tf =
+            tf2::Transform::getIdentity(); // Represents fr3_link0_T_prev_link
+        std::string prev_frame_name = "fr3_link0";
+
+        for (auto const &[franka_enum_frame, child_link_name] :
+             franka_frame_enum_to_link_name) {
+          auto transform_matrix = panda_franka_model->pose(
+              franka_enum_frame,
+              current_state); // Gives fr3_link0_T_CurrentLink
+          geometry_msgs::msg::Pose abs_pose_msg = get_pose(transform_matrix);
+          tf2::Transform current_abs_tf;
+          tf2::fromMsg(abs_pose_msg, current_abs_tf);
+
+          // Calculate relative transform: prev_link_T_current_link =
+          // (fr3_link0_T_prev_link).inverse() * (fr3_link0_T_current_link)
+          tf2::Transform relative_tf = prev_abs_tf.inverse() * current_abs_tf;
+
+          geometry_msgs::msg::TransformStamped tf_stamped;
+          tf_stamped.header.stamp = now;
+          tf_stamped.header.frame_id = prev_frame_name;
+          tf_stamped.child_frame_id = child_link_name;
+          tf_stamped.transform = tf2::toMsg(relative_tf);
+          tf_broadcaster->sendTransform(tf_stamped);
+
+          prev_abs_tf = current_abs_tf;
+          prev_frame_name = child_link_name;
+        }
+
+      } catch (const franka::Exception &e) {
+        RCLCPP_ERROR_STREAM(get_logger(),
+                            "Franka robot error in TF loop: " << e.what());
+      }
+      panda_franka_state.mut.unlock();
+      rate.sleep();
+    }
+    RCLCPP_INFO(get_logger(), "TF publish loop stopped.");
+  }
+
   ~ImpedanceController() {
     start_flag.store(false);
     if (mode != Mode::sim) {
@@ -1567,7 +1693,10 @@ private:
 
   std::mutex joint_state_mutex;
   JointState::SharedPtr current_joint_config{nullptr};
-  Eigen::Vector<double, 7> extern_tau;
+  Eigen::Vector<double, 7> extern_tau{};
+  Eigen::Vector<double, 7> initial_extern_tau{};
+  Eigen::Vector<double, 6> initial_h_e{};
+  Eigen::Vector<double, 6> h_e{};
   std::vector<double> world_base_link;
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer;
@@ -1611,6 +1740,10 @@ private:
   Eigen::VectorXd acceleration_limits{};
 
   const std::string frame_id_name{"fr3_joint8"};
+  const std::string robot_base_frame_name{"fr3_link0"};
+
+  // Map Franka frames to child frame names for TF publishing
+  std::map<franka::Frame, std::string> franka_frame_enum_to_link_name;
 
   // Control loop related variables
   rclcpp::Rate::SharedPtr control_loop_rate;
@@ -1625,6 +1758,9 @@ private:
   std::atomic<bool> compliance_mode{false};
   bool clamp;
   Eigen::VectorXd last_control_input;
+
+  // Human detection
+  human_presence presence_state;
 
   Eigen::Vector<double, 7>
   joint_limit_index_grad(const Eigen::Vector<double, 7> &current_joint_config,

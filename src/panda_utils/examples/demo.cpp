@@ -196,10 +196,10 @@ double total_task_time;
 const std::string robot_base_frame_name{"fr3_link0"};
 const std::string robot_end_affector_frame{"fr3_joint7"};
 const std::string world_frame{"world"};
-const rclcpp::Duration max_tf_age = rclcpp::Duration::from_seconds(1.0 / 30.0);
+// const rclcpp::Duration max_tf_age = rclcpp::Duration::from_seconds(1.0 / 30.0);
 const rclcpp::Duration max_wrist_tfs_age =
     rclcpp::Duration::from_seconds(1.0 / 5.0);
-const double robot_radius_area = 1.0;       // meters
+// const double robot_radius_area = 1.0;       // meters
 const double min_distance_from_joint = 1.0; // meters
 
 int main(int argc, char **argv) {

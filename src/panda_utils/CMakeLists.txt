@@ -99,7 +99,7 @@ target_link_libraries(clik_cmd_pub robot_model)
 add_executable(demo_node ./examples/demo_node.cpp)
 ament_target_dependencies(demo_node rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs)
 
-add_executable(demo ./examples/demo.cpp)
+add_executable(demo ./examples/demo.cpp ./src/constants.cpp)
 ament_target_dependencies(demo rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs image_processing)
 target_link_libraries(demo robot_model)
 
@@ -122,7 +122,7 @@ target_link_libraries(loop_cart_traj_example robot_model)
 add_executable(joint_traj_example ./examples/joint_traj_example.cpp)
 ament_target_dependencies(joint_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 
-add_executable(impedance_controller ./src/impedance_controller.cpp)
+add_executable(impedance_controller ./src/impedance_controller.cpp ./src/constants.cpp)
 ament_target_dependencies(impedance_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools tf2_geometry_msgs)
 target_link_libraries(impedance_controller robot_model franka debug_publisher)
 
