@@ -34,6 +34,7 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include <Eigen/src/Core/DiagonalMatrix.h>
 #include <Eigen/src/Core/Matrix.h>
+#include <Eigen/src/Core/util/Constants.h>
 #include <Eigen/src/Core/util/IndexedViewHelper.h>
 #include <Eigen/src/Geometry/AngleAxis.h>
 #include <Eigen/src/Geometry/Quaternion.h>
@@ -42,6 +43,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <franka/lowpass_filter.h>
 #include <franka/model.h>
@@ -65,6 +67,7 @@
 #include <rclcpp/utilities.hpp>
 #include <rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp>
 #include <rclcpp_lifecycle/rclcpp_lifecycle/lifecycle_node.hpp>
+#include <realtime_tools/realtime_thread_safe_box.hpp>
 #include <string>
 #include <tf2/LinearMath/Transform.hpp>
 #include <tf2/exceptions.hpp>
@@ -108,6 +111,11 @@ enum class Mode {
   // Real mode with franka panda library and communication
   franka
 };
+
+double low_pass_filter_alpha(double frequency, double sampletime) {
+  double time_constant = 1.0 / (2.0 * M_PI * frequency);
+  return sampletime / (time_constant + sampletime);
+}
 
 struct robot_state {
   std::optional<franka::RobotState> state;
@@ -176,17 +184,23 @@ convertMatrixToPose(const std::array<double, 16> &tf_matrix) {
 }
 
 Pose get_pose(const std::array<double, 16> &transform_mat) {
-  Eigen::Map<const Eigen::Matrix4d> eigen_matrix(transform_mat.data());
+  Eigen::Affine3d initial_transform(Eigen::Matrix4d::Map(transform_mat.data()));
+  // Eigen::Map<const Eigen::Matrix4d, Eigen::ColMajor> eigen_matrix(
+  //     transform_mat.data());
 
   geometry_msgs::msg::Pose pose_msg;
 
-  pose_msg.position.x = eigen_matrix(0, 3); // Tx
-  pose_msg.position.y = eigen_matrix(1, 3); // Ty
-  pose_msg.position.z = eigen_matrix(2, 3); // Tz
+  // pose_msg.position.x = eigen_matrix(0, 3); // Tx
+  // pose_msg.position.y = eigen_matrix(1, 3); // Ty
+  // pose_msg.position.z = eigen_matrix(2, 3); // Tz
+  //
+  pose_msg.position.x = initial_transform.translation().x(); // Tx
+  pose_msg.position.y = initial_transform.translation().y(); // Ty
+  pose_msg.position.z = initial_transform.translation().z(); // Tz
 
-  Eigen::Matrix3d rotation_matrix = eigen_matrix.block<3, 3>(0, 0);
+  // Eigen::Matrix3d rotation_matrix = eigen_matrix.block<3, 3>(0, 0);
 
-  Eigen::Quaterniond quaternion(rotation_matrix);
+  Eigen::Quaterniond quaternion(initial_transform.rotation());
   quaternion.normalize();
 
   pose_msg.orientation.x = quaternion.x();
@@ -199,13 +213,14 @@ Pose get_pose(const std::array<double, 16> &transform_mat) {
 
 Eigen::Matrix<double, 6, 7>
 get_jacobian(const std::array<double, 42> jacob_raw) {
-  // Eigen::Map<const Eigen::Matrix<double, 6, 7>> jacobian(jacob_raw.data());
-  Eigen::Matrix<double, 6, 7> jacobian;
-  for (size_t i = 0; i < 7; i++) {
-    for (size_t j = 0; j < 6; j++) {
-      jacobian(j, i) = jacob_raw[i * 7 + j];
-    }
-  }
+  Eigen::Map<const Eigen::Matrix<double, 6, 7>, Eigen::ColMajor> jacobian(
+      jacob_raw.data());
+  // Eigen::Matrix<double, 6, 7> jacobian;
+  // for (size_t i = 0; i < 7; i++) {
+  //   for (size_t j = 0; j < 6; j++) {
+  //     jacobian(j, i) = jacob_raw[i * 7 + j];
+  //   }
+  // }
   return jacobian;
 }
 
@@ -223,6 +238,16 @@ void print_initial_franka_state(const franka::RobotState state,
   Pose current_pose = get_pose(model.pose(franka::Frame::kFlange, state));
   RCLCPP_INFO_STREAM_ONCE(
       logger, "Current position: ["
+                  << current_pose.position.x << ", " << current_pose.position.y
+                  << ", " << current_pose.position.z << "]; Orientation: [] "
+                  << current_pose.orientation.w << ", "
+                  << current_pose.orientation.x << ", "
+                  << current_pose.orientation.y << ", "
+                  << current_pose.orientation.z << "]");
+
+  current_pose = get_pose(state.O_T_EE);
+  RCLCPP_INFO_STREAM_ONCE(
+      logger, "Current position (with O_T_EE): ["
                   << current_pose.position.x << ", " << current_pose.position.y
                   << ", " << current_pose.position.z << "]; Orientation: [] "
                   << current_pose.orientation.w << ", "
@@ -364,7 +389,7 @@ public:
         [this](
             const panda_interfaces::msg::CartesianCommand::ConstSharedPtr msg) {
           RCLCPP_INFO_ONCE(this->get_logger(), "Entered callback");
-          desired_cartesian_cmd = msg;
+          desired_cartesian_box.try_set(*msg);
           // std::cout << "im here";
           // std::lock_guard<std::mutex> lock(desired_pose_mutex);
           // desired_pose = std::make_shared<Pose>(msg);
@@ -493,7 +518,7 @@ public:
         realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
         this->create_publisher<geometry_msgs::msg::PoseStamped>(
             panda_interface_names::panda_pose_state_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS()));
+            panda_interface_names::CONTROLLER_PUBLISHER_QOS()));
 
     joint_states_pub =
         std::make_shared<realtime_tools::RealtimePublisher<JointState>>(
@@ -641,6 +666,11 @@ public:
       desired_pose_raw = get_pose(panda_franka_model.value().pose(
           franka::Frame::kFlange, panda_franka->readOnce()));
       desired_pose = std::make_shared<Pose>(desired_pose_raw);
+
+      desired_cartesian_cmd.pose = desired_pose_raw;
+      desired_twist = desired_cartesian_cmd.twist;
+      desired_accel = desired_cartesian_cmd.accel;
+
       desired_twist_vec[0] = 0.0;
       desired_twist_vec[1] = 0.0;
       desired_twist_vec[2] = 0.0;
@@ -654,6 +684,8 @@ public:
       desired_accel_vec[3] = 0.0;
       desired_accel_vec[4] = 0.0;
       desired_accel_vec[5] = 0.0;
+
+      desired_cartesian_box.set(desired_cartesian_cmd);
 
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Desired pose is: ["
@@ -706,8 +738,6 @@ public:
       Eigen::Matrix4d matrix_ident = ident.matrix();
       std::array<double, 16> ident_transform;
       Eigen::Map<Eigen::Matrix4d>(ident_transform.data()) = matrix_ident;
-      Eigen::Vector<double, 7> current_joints_speed =
-          Eigen::Vector<double, 7>::Zero();
 
       // Get jacobian function
       auto get_jacob =
@@ -723,6 +753,7 @@ public:
       Eigen::Vector<double, 6> current_twist;
       Eigen::Vector<double, 6> error_twist;
       Eigen::Vector<double, 7> y;
+      Eigen::Vector<double, 7> last_y = Eigen::Vector<double, 7>::Zero();
       Eigen::Vector<double, 7> tau_ext;
       Eigen::Vector<double, 6> h_e;
       Pose current_pose;
@@ -737,40 +768,51 @@ public:
       Eigen::Vector<double, 6> local_current_twist_vec;
       Eigen::Vector<double, 6> local_current_accel_vec;
 
+      joint_state_to_pub.position.resize(7);
+      joint_state_to_pub.velocity.resize(7);
+      joint_state_to_pub.effort.resize(7);
+      joint_state_to_pub.name = std::vector<std::string>{
+          "joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"};
+
+      // Low pass filter alpha
+      double low_pass_alpha = low_pass_filter_alpha(100.0, 0.001);
+      RCLCPP_INFO(this->get_logger(), "low pass alpha: %f", low_pass_alpha);
+
       robot_control_callback =
           [this, KP, KD, MD, MD_1, k_max, eps, ident_transform, get_jacob,
            &current_twist, &error_twist, &y, &current_pose, &error_quat,
-           &error_pose_vec, &mass_matrix_raw,
-           &desired_pose](const franka::RobotState &state,
-                          franka::Duration dt) -> franka::Torques {
+           &error_pose_vec, &mass_matrix_raw, low_pass_alpha,
+           &last_y](const franka::RobotState &state,
+                    franka::Duration dt) -> franka::Torques {
         if (!(start_flag.load() && rclcpp::ok())) {
           // Send last commanded joint effort command
           return franka::MotionFinished(franka::Torques(state.tau_J_d));
         }
 
-        if (dt.toSec() == 0.0) {
-          jacobian = get_jacobian(
-              panda_franka_model->zeroJacobian(franka::Frame::kFlange, state));
-        }
+        // Access the optional RealtimeThreadSafeBox
+        // If it has something use the new value, else use the latest value
+        // available
+        desired_cartesian_cmd_opt = desired_cartesian_box.try_get();
+        if (desired_cartesian_cmd_opt.has_value()) {
+          desired_cartesian_cmd = desired_cartesian_cmd_opt.value();
 
-        {
-          if (desired_cartesian_cmd) {
-            desired_pose = desired_cartesian_cmd->pose;
+          desired_pose_raw = desired_cartesian_cmd.pose;
+          desired_twist = desired_cartesian_cmd.twist;
+          desired_accel = desired_cartesian_cmd.accel;
 
-            desired_twist_vec[0] = desired_cartesian_cmd->twist.linear.x;
-            desired_twist_vec[1] = desired_cartesian_cmd->twist.linear.y;
-            desired_twist_vec[2] = desired_cartesian_cmd->twist.linear.z;
-            desired_twist_vec[3] = desired_cartesian_cmd->twist.angular.x;
-            desired_twist_vec[4] = desired_cartesian_cmd->twist.angular.y;
-            desired_twist_vec[5] = desired_cartesian_cmd->twist.angular.z;
+          desired_twist_vec[0] = desired_twist.linear.x;
+          desired_twist_vec[1] = desired_twist.linear.y;
+          desired_twist_vec[2] = desired_twist.linear.z;
+          desired_twist_vec[3] = desired_twist.angular.x;
+          desired_twist_vec[4] = desired_twist.angular.y;
+          desired_twist_vec[5] = desired_twist.angular.z;
 
-            desired_accel_vec[0] = desired_cartesian_cmd->accel.linear.x;
-            desired_accel_vec[1] = desired_cartesian_cmd->accel.linear.y;
-            desired_accel_vec[2] = desired_cartesian_cmd->accel.linear.z;
-            desired_accel_vec[3] = desired_cartesian_cmd->accel.angular.x;
-            desired_accel_vec[4] = desired_cartesian_cmd->accel.angular.y;
-            desired_accel_vec[5] = desired_cartesian_cmd->accel.angular.z;
-          }
+          desired_accel_vec[0] = desired_accel.linear.x;
+          desired_accel_vec[1] = desired_accel.linear.y;
+          desired_accel_vec[2] = desired_accel.linear.z;
+          desired_accel_vec[3] = desired_accel.angular.x;
+          desired_accel_vec[4] = desired_accel.angular.y;
+          desired_accel_vec[5] = desired_accel.angular.z;
         }
 
         auto now = this->now();
@@ -780,8 +822,19 @@ public:
         Eigen::Map<const Eigen::Vector<double, 7>> current_joints_config_vec(
             state.q.data());
 
-        Eigen::Map<const Eigen::Vector<double, 7>> current_joints_speed(
-            state.dq.data());
+        // Eigen::Map<const Eigen::Vector<double, 7>> current_joints_speed(
+        //     state.dq.data());
+        if (dt.toSec() != 0.0) {
+          for (int i = 0; i < 7; i++) {
+            current_joints_speed[i] = franka::lowpassFilter(
+                dt.toSec(), state.dq[i], current_joints_speed[i], 15.0);
+          }
+        } else {
+          for (int i = 0; i < 7; i++) {
+            current_joints_speed[i] = state.dq[i];
+          }
+        }
+        // last_joints_speed = current_joints_speed;
 
         // Get current pose and jacobian according to stiffness or flange
         // frame
@@ -818,10 +871,6 @@ public:
 
         // Calculate pose error
         {
-          // RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(),
-          //                             1000.0, "Accessing desired pose");
-          // std::lock_guard<std::mutex> lock(desired_pose_mutex);
-          // Get desired pose
           Eigen::Quaterniond desired_quat{};
           desired_quat.w() = desired_pose_raw.orientation.w;
           desired_quat.x() = desired_pose_raw.orientation.x;
@@ -926,6 +975,13 @@ public:
           }
         }
 
+        for (int i = 0; i < y.size(); i++) {
+          if (y[i] == 0.0) {
+            y[i] = last_y[i];
+          }
+        }
+        last_y = y;
+
         // Eigen::Vector<double, 7> control_input_vec = mass_matrix * y +
         // coriolis;
         Eigen::Vector<double, 7> control_input_vec =
@@ -946,22 +1002,6 @@ public:
           RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "Running safety checks");
           try {
             for (int i = 0; i < control_input_vec.size(); i++) {
-              // if ((abs(control_input_vec[i] - last_control_input[i]) /
-              //      dt.toSec()) > effort_speed_limits[i]) {
-              //   RCLCPP_INFO_STREAM_ONCE(
-              //       this->get_logger(),
-              //       "Running safety check: torque variation");
-              //   RCLCPP_ERROR_STREAM(
-              //       this->get_logger(),
-              //       "Torque variation over limit: "
-              //           << (abs(control_input_vec[i] - last_control_input[i])
-              //           /
-              //               dt.toSec()));
-              //   // panda_franka->stop();
-              //   // start_flag.store(false);
-              //   // return
-              //   // franka::MotionFinished(franka::Torques(state.tau_J_d));
-              // } else
               if (abs(control_input_vec[i]) >= 6.0 * effort_limits[i] / 10.0) {
                 RCLCPP_INFO_STREAM_ONCE(this->get_logger(),
                                         "Running safety check: effort limit");
@@ -970,27 +1010,17 @@ public:
                 panda_franka->stop();
                 start_flag.store(false);
                 return franka::MotionFinished(franka::Torques(state.tau_J_d));
-              } else if (abs(state.dq[i]) >= 0.3) {
+              } else if (abs(state.dq[i]) >= 0.5) {
                 RCLCPP_INFO_STREAM_ONCE(
                     this->get_logger(),
                     "Running safety check: joint limit speed");
                 RCLCPP_ERROR_STREAM(this->get_logger(),
-                                    "Joint velocity over the safety value 0.3");
+                                    "Joint velocity over the safety value 0.5");
                 panda_franka->stop();
                 start_flag.store(false);
                 return franka::MotionFinished(franka::Torques(state.tau_J_d));
               }
             }
-            // if (error_pose_vec.norm() >= 0.1) {
-            //   RCLCPP_INFO_STREAM_ONCE(this->get_logger(),
-            //                           "Running safety check: pose norm");
-            //   RCLCPP_ERROR_STREAM(this->get_logger(),
-            //                       "Norm of the pose error exceeded the
-            //                       limit");
-            //   panda_franka->stop();
-            //   start_flag.store(false);
-            //   return franka::MotionFinished(franka::Torques(state.tau_J_d));
-            // }
           } catch (std::exception &ex) {
             RCLCPP_ERROR_STREAM(this->get_logger(),
                                 "Error in safety checks: " << ex.what());
@@ -1013,8 +1043,9 @@ public:
               this->get_logger(),
               "Control input vec Nan or Inf: "
                   << control_input_vec
-                  << ", Desired pose: " << desired_pose.position.x << ", "
-                  << desired_pose.position.y << ", " << desired_pose.position.z
+                  << ", Desired pose: " << desired_pose_raw.position.x << ", "
+                  << desired_pose_raw.position.y << ", "
+                  << desired_pose_raw.position.z
                   << ", Desired twist: " << desired_twist_vec
                   << ", Desired accel: " << desired_accel_vec
                   << ", Jacobian pinv: " << jacobian_pinv << ", error twist: "
@@ -1045,20 +1076,24 @@ public:
         if (debug_pub.data().mut.try_lock()) {
 
           try {
-            debug_pub.data().h_e = h_e;
+            // debug_pub.data().h_e = h_e;
             debug_pub.data().tau_ext = tau_ext;
-            debug_pub.data().lambda = lambda;
-            debug_pub.data().sigma_min = sigma_min;
+            // debug_pub.data().lambda = lambda;
+            // debug_pub.data().sigma_min = sigma_min;
             debug_pub.data().current_twist = current_twist;
-            // debug_pub.data().des_twist = desired_twist;
-            // debug_pub.data().des_pose = *desired_pose;
+            debug_pub.data().des_twist = desired_twist;
+            // debug_pub.data().des_pose = desired_pose_raw;
             // debug_pub.data().des_accel = desired_accel;
+            debug_pub.data().gravity = panda_franka_model->gravity(state);
+            debug_pub.data().coriolis = coriolis;
+            debug_pub.data().filtered_joints_vec = current_joints_speed;
             debug_pub.data().error_pose_vec.head(3) = error_pose_vec.head(3);
             debug_pub.data().error_pose_vec.tail(3) = error_pose_vec.tail(3);
             // w value of the pose message in a vector<7>
             debug_pub.data().error_pose_vec(3) = 1.0;
-            debug_pub.data().tau_d_last = tau;
-            debug_pub.data().y = y;
+            debug_pub.data().tau_d_calculated = tau;
+            debug_pub.data().tau_d_last = state.tau_J_d;
+            debug_pub.data().y = mass_matrix * y;
 
             // Robot state
             debug_pub.data().robot_state->q = state.q;
@@ -1074,10 +1109,19 @@ public:
           debug_pub.data().mut.unlock();
         }
 
-        PoseStamped pose_stamp;
-        pose_stamp.header.stamp = this->now();
-        pose_stamp.pose = current_pose;
-        robot_pose_pub->try_publish(pose_stamp);
+        // PoseStamped pose_stamp;
+        // pose_stamp.header.stamp = this->now();
+        // pose_stamp.pose = current_pose;
+        // robot_pose_pub->try_publish(pose_stamp);
+        //
+        joint_state_to_pub.header.stamp = this->now();
+        for (size_t i = 0; i < joint_state_to_pub.position.size(); i++) {
+          joint_state_to_pub.position[i] = state.q[i];
+          joint_state_to_pub.velocity[i] = state.dq[i];
+          joint_state_to_pub.effort[i] = state.tau_J[i];
+        }
+
+        joint_states_pub->try_publish(joint_state_to_pub);
 
         RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "Sent command first time");
         return franka::Torques(tau);
@@ -1194,14 +1238,6 @@ public:
       // Try-catch version
       control_thread = std::thread{[this]() {
         // Configuring real time thread
-        if (realtime_tools::configure_sched_fifo(99)) {
-          RCLCPP_INFO(this->get_logger(), "Set real time priority");
-        } else {
-          RCLCPP_ERROR(this->get_logger(),
-                       "Real time priority not set, shutting down");
-          start_flag.store(false);
-          rclcpp::shutdown();
-        }
         try {
 
           // EE to K transform thread
@@ -1300,61 +1336,62 @@ public:
           // }}.detach();
 
           // Debug publisher thread
-          // std::thread{[this]() {
-          //   using namespace std::chrono_literals;
-          //   if (realtime_tools::configure_sched_fifo(95)) {
-          //     RCLCPP_INFO(this->get_logger(),
-          //                 "Set real time priority for publisher thread");
-          //   } else {
-          //     RCLCPP_ERROR(this->get_logger(),
-          //                  "Real time priority not set for publisher thread "
-          //                  "shutting down");
-          //     start_flag.store(false);
-          //     rclcpp::shutdown();
-          //   }
-          //   JointsEffort cmd;
-          //   PoseStamped pose_debug;
-          //   TwistStamped twist_debug;
-          //   AccelStamped accel_debug;
-          //   panda_interfaces::msg::DoubleStamped double_stamped;
-          //   panda_interfaces::msg::DoubleArrayStamped arr_stamped;
-          //   joint_state_to_pub.position.resize(7);
-          //   joint_state_to_pub.velocity.resize(7);
-          //   joint_state_to_pub.effort.resize(7);
-          //   joint_state_to_pub.name =
-          //       std::vector<std::string>{"joint1", "joint2", "joint3",
-          //       "joint4",
-          //                                "joint5", "joint6", "joint7"};
-          //   arr_stamped.data.resize(7);
-          //
-          //   RCLCPP_INFO(this->get_logger(), "Started print control thread");
-          //   while (start_flag.load() && rclcpp::ok()) {
-          //     std::this_thread::sleep_for(5ms);
-          //     try {
-          //
-          //       debug_pub.data().mut.lock();
-          //       // JOINT VALUES PUBLISHER
-          //       //////////////////////////////////////////
-          //       // if (debug_pub.data().robot_state.has_value()) {
-          //       //   publish_robot_state_libfranka(
-          //       //       debug_pub.data().robot_state.value());
-          //       // }
-          //       //////////////////////////////////////////
-          //
-          //       debug_pub.publish(this->now());
-          //
-          //     } catch (std::exception &ex) {
-          //       RCLCPP_ERROR_STREAM_THROTTLE(
-          //           this->get_logger(), *this->get_clock(), 1000.0,
-          //           "Error printing debug data: " << ex.what());
-          //     }
-          //
-          //     debug_pub.data().has_data = false;
-          //     debug_pub.data().mut.unlock();
-          //   }
-          //   RCLCPP_INFO(this->get_logger(), "Shutdown print control thread");
-          // }}.detach();
+          std::thread{[this]() {
+            using namespace std::chrono_literals;
+            // if (realtime_tools::configure_sched_fifo(95)) {
+            //   RCLCPP_INFO(this->get_logger(),
+            //               "Set real time priority for publisher thread");
+            // } else {
+            //   RCLCPP_ERROR(this->get_logger(),
+            //                "Real time priority not set for publisher thread "
+            //                "shutting down");
+            //   start_flag.store(false);
+            //   rclcpp::shutdown();
+            // }
+            JointsEffort cmd;
+            PoseStamped pose_debug;
+            TwistStamped twist_debug;
+            AccelStamped accel_debug;
+            panda_interfaces::msg::DoubleStamped double_stamped;
+            panda_interfaces::msg::DoubleArrayStamped arr_stamped;
+            arr_stamped.data.resize(7);
 
+            RCLCPP_INFO(this->get_logger(), "Started print control thread");
+            while (start_flag.load() && rclcpp::ok()) {
+              std::this_thread::sleep_for(5ms);
+              try {
+
+                debug_pub.data().mut.lock();
+                // JOINT VALUES PUBLISHER
+                //////////////////////////////////////////
+                // if (debug_pub.data().robot_state.has_value()) {
+                //   publish_robot_state_libfranka(
+                //       debug_pub.data().robot_state.value());
+                // }
+                //////////////////////////////////////////
+
+                debug_pub.publish(this->now());
+
+              } catch (std::exception &ex) {
+                RCLCPP_ERROR_STREAM_THROTTLE(
+                    this->get_logger(), *this->get_clock(), 1000.0,
+                    "Error printing debug data: " << ex.what());
+              }
+
+              debug_pub.data().has_data = false;
+              debug_pub.data().mut.unlock();
+            }
+            RCLCPP_INFO(this->get_logger(), "Shutdown print control thread");
+          }}.detach();
+
+          if (realtime_tools::configure_sched_fifo(99)) {
+            RCLCPP_INFO(this->get_logger(), "Set real time priority");
+          } else {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Real time priority not set, shutting down");
+            start_flag.store(false);
+            rclcpp::shutdown();
+          }
           RCLCPP_INFO_STREAM(this->get_logger(),
                              "Starting control thread with real time robot");
           panda_franka->control(robot_control_callback);
@@ -1549,11 +1586,18 @@ private:
   std::mutex desired_accel_mutex;
   Eigen::Vector<double, 6> desired_twist_vec = Eigen::Vector<double, 6>::Zero();
   Eigen::Vector<double, 6> desired_accel_vec = Eigen::Vector<double, 6>::Zero();
-  Twist desired_twist;
-  Accel desired_accel;
+  Twist desired_twist{};
+  Accel desired_accel{};
 
-  panda_interfaces::msg::CartesianCommand::ConstSharedPtr desired_cartesian_cmd{
-      nullptr};
+  Eigen::Vector<double, 7> last_joints_speed = Eigen::Vector<double, 7>::Zero();
+  Eigen::Vector<double, 7> current_joints_speed =
+      Eigen::Vector<double, 7>::Zero();
+
+  panda_interfaces::msg::CartesianCommand desired_cartesian_cmd{};
+  std::optional<panda_interfaces::msg::CartesianCommand>
+      desired_cartesian_cmd_opt{std::nullopt};
+  realtime_tools::RealtimeThreadSafeBox<panda_interfaces::msg::CartesianCommand>
+      desired_cartesian_box{};
 
   Eigen::VectorXd effort_limits{};
   Eigen::VectorXd effort_speed_limits{};
@@ -1698,6 +1742,7 @@ private:
     for (int i = 0; i < control_input.size(); i++) {
       if ((abs(control_input[i] - last_control_input[i]) / dt) >
           effort_speed_limits[i]) {
+        RCLCPP_INFO_ONCE(this->get_logger(), "CLAMPED INPUT TORQUE VALUE");
         if (control_input[i] - last_control_input[i] < 0.0) {
           control_input[i] =
               last_control_input[i] - effort_speed_limits[i] * dt;
@@ -1906,7 +1951,7 @@ void ImpedanceController::control() {
         // current_joints_speed[i] = current_joint_config->velocity[i];
         current_joints_speed[i] =
             franka::lowpassFilter(0.001, current_joint_config->velocity[i],
-                                  current_joints_speed[i], 50.0);
+                                  current_joints_speed[i], 20.0);
       }
     }
 

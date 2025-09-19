@@ -4,6 +4,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "panda_interfaces/action/cart_traj.hpp"
+#include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_utils/constants.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -121,32 +122,41 @@ public:
         this, panda_interface_names::panda_cart_loop_action_name, handle_goal,
         handle_cancel, handle_accepted);
 
-    cmd_pose_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<geometry_msgs::msg::Pose>>(
-        this->create_publisher<geometry_msgs::msg::Pose>(
-            panda_interface_names::panda_pose_cmd_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS()));
-
-    cmd_twist_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<geometry_msgs::msg::Twist>>(
-        this->create_publisher<geometry_msgs::msg::Twist>(
-            panda_interface_names::panda_twist_cmd_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS()));
-
-    cmd_accel_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<geometry_msgs::msg::Accel>>(
-        this->create_publisher<geometry_msgs::msg::Accel>(
-            panda_interface_names::panda_accel_cmd_topic_name,
+    // cmd_pose_pub = std::make_shared<
+    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Pose>>(
+    //     this->create_publisher<geometry_msgs::msg::Pose>(
+    //         panda_interface_names::panda_pose_cmd_topic_name,
+    //         panda_interface_names::DEFAULT_TOPIC_QOS()));
+    //
+    // cmd_twist_pub = std::make_shared<
+    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Twist>>(
+    //     this->create_publisher<geometry_msgs::msg::Twist>(
+    //         panda_interface_names::panda_twist_cmd_topic_name,
+    //         panda_interface_names::DEFAULT_TOPIC_QOS()));
+    //
+    // cmd_accel_pub = std::make_shared<
+    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Accel>>(
+    //     this->create_publisher<geometry_msgs::msg::Accel>(
+    //         panda_interface_names::panda_accel_cmd_topic_name,
+    //         panda_interface_names::DEFAULT_TOPIC_QOS()));
+    cartesian_cmd_pub = std::make_shared<
+        realtime_tools::RealtimePublisher<panda_interfaces::msg::CartesianCommand>>(
+        this->create_publisher<panda_interfaces::msg::CartesianCommand>(
+            "/panda/cartesian_cmd",
             panda_interface_names::DEFAULT_TOPIC_QOS()));
   }
 
 private:
-  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Pose>
-      cmd_pose_pub;
-  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Twist>
-      cmd_twist_pub;
-  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Accel>
-      cmd_accel_pub;
+  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Pose>
+  //     cmd_pose_pub;
+  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Twist>
+  //     cmd_twist_pub;
+  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Accel>
+  //     cmd_accel_pub;
+
+  realtime_tools::RealtimePublisherSharedPtr<
+      panda_interfaces::msg::CartesianCommand>
+      cartesian_cmd_pub;
 
   rclcpp_action::Server<LoopCartTraj>::SharedPtr action_traj_server;
 
@@ -179,7 +189,7 @@ private:
     geometry_msgs::msg::PoseStamped initial_pose;
     rclcpp::wait_for_message<geometry_msgs::msg::PoseStamped>(
         initial_pose, node, panda_interface_names::panda_pose_state_topic_name,
-        10s);
+        10s, panda_interface_names::CONTROLLER_PUBLISHER_QOS());
 
     size_t index = 0;
     int num_poses = goal->desired_poses.size();
@@ -204,9 +214,10 @@ private:
                                 std::pow(orient_err.x() - orient_err.x(), 2) +
                                 std::pow(orient_err.x() - orient_err.x(), 2));
 
-    if (pos_error > 1e-2 || pos_orientation > 1e-1) {
-      RCLCPP_ERROR(this->get_logger(),
-                   "Robot not in first desired position, aborting");
+    if (pos_error > 1e-3 || pos_orientation > 1e-3) {
+      RCLCPP_ERROR_STREAM(this->get_logger(),
+                          "Robot not in first desired position, aborting: "
+                              << pos_error << ", " << pos_orientation);
       LoopCartTraj::Result res;
       res.completed = false;
       goal_handle->abort(std::make_shared<LoopCartTraj::Result>(res));
@@ -244,6 +255,7 @@ private:
       double segment_total_time = goal->total_time / goal->desired_poses.size();
       rclcpp::Duration traj_duration =
           rclcpp::Duration::from_seconds(segment_total_time);
+      panda_interfaces::msg::CartesianCommand cmd_cartesian;
       geometry_msgs::msg::Pose cmd_pose;
       geometry_msgs::msg::Twist cmd_twist;
       geometry_msgs::msg::Accel cmd_accel;
@@ -338,10 +350,14 @@ private:
         goal_handle->publish_feedback(feedback);
 
         RCLCPP_DEBUG_ONCE(this->get_logger(), "Publish command");
+        cmd_cartesian.pose = cmd_pose;
+        cmd_cartesian.twist = cmd_twist;
+        cmd_cartesian.accel = cmd_accel;
+        cartesian_cmd_pub->try_publish(cmd_cartesian);
 
-        cmd_pose_pub->tryPublish(cmd_pose);
-        cmd_twist_pub->tryPublish(cmd_twist);
-        cmd_accel_pub->tryPublish(cmd_accel);
+        // cmd_pose_pub->tryPublish(cmd_pose);
+        // cmd_twist_pub->tryPublish(cmd_twist);
+        // cmd_accel_pub->tryPublish(cmd_accel);
 
         // Sleep
         //

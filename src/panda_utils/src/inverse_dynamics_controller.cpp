@@ -9,6 +9,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "multibody/fwd.hpp"
+#include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
 #include "panda_interfaces/msg/joints_command.hpp"
 #include "panda_interfaces/msg/joints_effort.hpp"
@@ -275,6 +276,16 @@ public:
     mass_matrix_val_debug = this->create_publisher<std_msgs::msg::Float64>(
         "debug/mass_matrix_norm", panda_interface_names::DEFAULT_TOPIC_QOS());
 
+    auto set_cartesian_cmd =
+        [this](
+            const panda_interfaces::msg::CartesianCommand::ConstSharedPtr msg) {
+          RCLCPP_INFO_ONCE(this->get_logger(), "Entered callback");
+        };
+    cartesian_cmd_sub =
+        this->create_subscription<panda_interfaces::msg::CartesianCommand>(
+            "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS(),
+            set_cartesian_cmd);
+
     // Compliance mode Service
 
     auto compliance_mode_cb =
@@ -299,11 +310,11 @@ public:
             panda_interface_names::set_compliance_mode_service_name,
             compliance_mode_cb);
 
-    // robot_pose_pub = std::make_shared<
-    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
-    //     this->create_publisher<geometry_msgs::msg::PoseStamped>(
-    //         panda_interface_names::panda_pose_state_topic_name,
-    //         panda_interface_names::DEFAULT_TOPIC_QOS()));
+    robot_pose_pub = std::make_shared<
+        realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
+        this->create_publisher<geometry_msgs::msg::PoseStamped>(
+            panda_interface_names::panda_pose_state_topic_name,
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
 
     joint_states_pub =
         std::make_shared<realtime_tools::RealtimePublisher<JointState>>(
@@ -717,6 +728,8 @@ private:
   // Subscribers
   rclcpp::Subscription<JointState>::SharedPtr robot_joint_states_sub{};
   rclcpp::Subscription<JointsCommand>::SharedPtr desired_joint_command_sub{};
+  rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr
+      cartesian_cmd_sub{};
   rclcpp::Subscription<JointTorqueMeasureStamped>::SharedPtr
       robot_measured_torque_sub{};
 
@@ -736,8 +749,8 @@ private:
   Publisher<std_msgs::msg::Float64>::SharedPtr mass_matrix_val_debug{};
 
   // Robot pose publisher
-  // realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
-  //     robot_pose_pub{};
+  realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
+      robot_pose_pub{};
   realtime_tools::RealtimePublisher<sensor_msgs::msg::JointState>::SharedPtr
       joint_states_pub{};
 
@@ -885,7 +898,7 @@ private:
         panda_franka_model.value().pose(franka::Frame::kFlange, state));
     // current_pose.pose = convertMatrixToPose(state.O_T_EE);
     current_pose.header.stamp = this->now();
-    // robot_pose_pub->tryPublish(current_pose);
+    robot_pose_pub->try_publish(current_pose);
 
     // Publish joint state
     joint_state_to_pub.header.stamp = this->now();

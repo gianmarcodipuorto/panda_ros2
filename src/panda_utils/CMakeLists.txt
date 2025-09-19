@@ -115,6 +115,10 @@ add_executable(cart_traj_example ./examples/cart_traj_example.cpp)
 ament_target_dependencies(cart_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 target_link_libraries(cart_traj_example robot_model)
 
+add_executable(loop_cart_traj_example ./examples/loop_cart_traj_example.cpp)
+ament_target_dependencies(loop_cart_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+target_link_libraries(loop_cart_traj_example robot_model)
+
 add_executable(joint_traj_example ./examples/joint_traj_example.cpp)
 ament_target_dependencies(joint_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 
@@ -158,6 +162,7 @@ install(TARGETS
   publish_franks_tfs
   estimate_external_forces
   estimate_hand_external_force
+  loop_cart_traj_example
   DESTINATION lib/${PROJECT_NAME}
 )
 

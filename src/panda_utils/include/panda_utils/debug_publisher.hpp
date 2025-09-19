@@ -40,6 +40,9 @@ struct debug_data {
   // Flag to indicate if the data has been published/contain data
   bool has_data;
 
+  // Last calculated tau
+  std::optional<std::array<double, 7>> tau_d_calculated = std::array<double, 7>{};
+
   // Last commanded tau
   std::optional<std::array<double, 7>> tau_d_last = std::array<double, 7>{};
 
@@ -94,6 +97,10 @@ struct debug_data {
 
   // Tau external contribute in control law
   std::optional<Eigen::Vector<double, 7>> tau_ext = Eigen::Vector<double, 7>{};
+
+  // Filtered joint velocities
+  std::optional<Eigen::Vector<double, 7>> filtered_joints_vec =
+      Eigen::Vector<double, 7>{};
 };
 
 class DebugPublisher {
@@ -123,12 +130,15 @@ private:
       min_singular_val_pub{};
   Publisher<PoseStamped>::SharedPtr pose_error_debug{};
   Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub_debug{};
+  Publisher<JointsEffort>::SharedPtr calculated_joints_effort_pub_debug{};
   Publisher<JointsEffort>::SharedPtr gravity_contribute_debug{};
   Publisher<JointsEffort>::SharedPtr y_contribute_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       y_cartesian_contribute_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       tau_external_contribute_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      filtered_joints_vec_pub{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       coriolis_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr

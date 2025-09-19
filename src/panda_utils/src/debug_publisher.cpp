@@ -13,7 +13,10 @@ void DebugPublisher::create_pubs(
     rclcpp_lifecycle::LifecycleNode::SharedPtr node, rclcpp::QoS qos) {
 
   robot_joint_efforts_pub_debug =
-      node->create_publisher<JointsEffort>("debug/cmd/effort_no_gravity", qos);
+      node->create_publisher<JointsEffort>("debug/cmd/effort_read_no_gravity", qos);
+
+  calculated_joints_effort_pub_debug =
+      node->create_publisher<JointsEffort>("debug/cmd/effort_calculated", qos);
 
   gravity_contribute_debug =
       node->create_publisher<JointsEffort>("debug/cmd/gravity", qos);
@@ -52,6 +55,10 @@ void DebugPublisher::create_pubs(
   tau_external_contribute_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/cmd/tau_ext_contribute", qos);
+
+  filtered_joints_vec_pub =
+      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
+          "debug/filtered_joints_vec", qos);
 
   coriolis_debug =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
@@ -118,6 +125,13 @@ void DebugPublisher::publish(rclcpp::Time now) {
         effort_cmd.effort_values[i] = pub_data.tau_d_last.value()[i];
       }
       robot_joint_efforts_pub_debug->publish(effort_cmd);
+    }
+
+    if (pub_data.tau_d_calculated.has_value()) {
+      for (int i = 0; i < 7; i++) {
+        effort_cmd.effort_values[i] = pub_data.tau_d_calculated.value()[i];
+      }
+      calculated_joints_effort_pub_debug->publish(effort_cmd);
     }
 
     if (pub_data.gravity.has_value()) {
@@ -225,6 +239,13 @@ void DebugPublisher::publish(rclcpp::Time now) {
         arr_stamped.data[i] = pub_data.tau_ext.value()[i];
       }
       tau_external_contribute_debug->publish(arr_stamped);
+    }
+
+    if (pub_data.filtered_joints_vec.has_value()) {
+      for (size_t i = 0; i < 7; i++) {
+        arr_stamped.data[i] = pub_data.filtered_joints_vec.value()[i];
+      }
+      filtered_joints_vec_pub->publish(arr_stamped);
     }
 
     if (pub_data.coriolis.has_value()) {

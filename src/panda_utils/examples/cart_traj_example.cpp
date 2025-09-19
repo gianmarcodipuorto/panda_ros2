@@ -163,7 +163,7 @@ int main(int argc, char *argv[]) {
   auto pose_sub =
       sub_node->create_subscription<geometry_msgs::msg::PoseStamped>(
           panda_interface_names::panda_pose_state_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS(),
+          panda_interface_names::CONTROLLER_PUBLISHER_QOS(),
           [&initial_pose](
               const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
             initial_pose = msg;
@@ -249,14 +249,14 @@ int main(int argc, char *argv[]) {
             << "] in " << total_time << "[s]");
     // chiamo l'azione e aspetto che termini
     rclcpp_action::Client<CartTraj>::SendGoalOptions goal_options;
-    goal_options.feedback_callback =
-        [node](rclcpp_action::ClientGoalHandle<CartTraj>::SharedPtr,
-               const std::shared_ptr<
-                   const panda_interfaces::action::CartTraj_Feedback>
-                   feedback) {
-          RCLCPP_INFO_STREAM(node->get_logger(),
-                             "Time left: " << feedback->time_left << "[s].");
-        };
+    // goal_options.feedback_callback =
+    //     [node](rclcpp_action::ClientGoalHandle<CartTraj>::SharedPtr,
+    //            const std::shared_ptr<
+    //                const panda_interfaces::action::CartTraj_Feedback>
+    //                feedback) {
+    //       RCLCPP_INFO_STREAM(node->get_logger(),
+    //                          "Time left: " << feedback->time_left << "[s].");
+    //     };
 
     using namespace std::chrono_literals;
     RCLCPP_INFO_STREAM(node->get_logger(),

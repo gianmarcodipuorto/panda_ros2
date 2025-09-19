@@ -15,6 +15,7 @@
 #include <Eigen/src/Geometry/Quaternion.h>
 #include <cmath>
 #include <memory>
+#include <random>
 #include <rclcpp/duration.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/node.hpp>
@@ -163,9 +164,11 @@ public:
         panda_interface_names::panda_accel_cmd_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS());
 
-    cartesian_cmd_pub =
+    cartesian_cmd_pub = std::make_shared<
+        realtime_tools::RealtimePublisher<panda_interfaces::msg::CartesianCommand>>(
         this->create_publisher<panda_interfaces::msg::CartesianCommand>(
-            "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS());
+            "/panda/cartesian_cmd",
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
   }
 
 private:
@@ -176,7 +179,8 @@ private:
   // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Accel>
   //     cmd_accel_pub;
 
-  rclcpp::Publisher<panda_interfaces::msg::CartesianCommand>::SharedPtr
+  realtime_tools::RealtimePublisherSharedPtr<
+      panda_interfaces::msg::CartesianCommand>
       cartesian_cmd_pub;
   rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr cmd_pose_pub;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_twist_pub;
@@ -355,7 +359,7 @@ private:
       cmd_cartesian.pose = cmd_pose;
       cmd_cartesian.twist = cmd_twist;
       cmd_cartesian.accel = cmd_accel;
-      cartesian_cmd_pub->publish(cmd_cartesian);
+      cartesian_cmd_pub->try_publish(cmd_cartesian);
 
       // Sleep
       //
