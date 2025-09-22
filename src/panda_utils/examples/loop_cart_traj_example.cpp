@@ -122,21 +122,6 @@ void publish_state(
   pub->publish(color);
 }
 
-struct human_presence {
-  const double MAX_TIME = 1.0;
-  std::shared_mutex mut;
-  bool human_present = false;
-  rclcpp::Duration time_present = rclcpp::Duration::from_seconds(0.0);
-  std::optional<std::string> contact_wrist{std::nullopt};
-
-  void normalize_time() {
-    if (time_present.seconds() > MAX_TIME) {
-      time_present = rclcpp::Duration::from_seconds(MAX_TIME);
-    } else if (time_present.seconds() < 0.0) {
-      time_present = rclcpp::Duration::from_seconds(0.0);
-    }
-  }
-};
 
 void fill_pose_orientation(geometry_msgs::msg::Pose &pose,
                            const Eigen::Quaterniond &orientation) {

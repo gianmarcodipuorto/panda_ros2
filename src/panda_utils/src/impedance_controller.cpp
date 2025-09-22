@@ -1,4 +1,3 @@
-#include "algorithm/jacobian.hpp"
 #include "franka/control_types.h"
 #include "franka/exception.h"
 #include "franka/lowpass_filter.h"
@@ -29,8 +28,6 @@
 #include "realtime_tools/realtime_tools/realtime_helpers.hpp"
 #include "realtime_tools/realtime_tools/realtime_publisher.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "std_msgs/msg/float64.hpp"
-#include "std_msgs/msg/int8.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "tf2_eigen/tf2_eigen/tf2_eigen.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -104,22 +101,6 @@ auto DEFAULT_URDF_PATH =
 //   franka::RobotState robot_state;
 //   std::array<double, 7> gravity;
 // };
-
-struct human_presence {
-  const double MAX_TIME = 1.0;
-  std::shared_mutex mut;
-  bool human_present = false;
-  rclcpp::Duration time_present = rclcpp::Duration::from_seconds(0.0);
-  std::optional<std::string> contact_wrist{std::nullopt};
-
-  void normalize_time() {
-    if (time_present.seconds() > MAX_TIME) {
-      time_present = rclcpp::Duration::from_seconds(MAX_TIME);
-    } else if (time_present.seconds() < 0.0) {
-      time_present = rclcpp::Duration::from_seconds(0.0);
-    }
-  }
-};
 
 enum class Mode {
   // Simulation only mode
@@ -333,8 +314,6 @@ public:
   ImpedanceController(const std::string urdf_robot_path = DEFAULT_URDF_PATH)
       : rclcpp_lifecycle::LifecycleNode(
             panda_interface_names::inverse_dynamics_controller_node_name),
-        panda_mine(PANDA_DH_PARAMETERS, PANDA_JOINT_TYPES,
-                   OrientationConfiguration::UNIT_QUATERNION),
         panda(urdf_robot_path, true) {
 
     // Declare parameters
@@ -354,7 +333,6 @@ public:
     this->declare_parameter<std::string>("robot_ip", "192.168.1.0");
     this->declare_parameter<bool>("use_robot", false);
     this->declare_parameter<bool>("use_franka_sim", false);
-    // World to base link transform with quaternion (w, x, y, z)
     this->declare_parameter<std::vector<double>>(
         "world_base_link",
         std::vector<double>{0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0});
@@ -363,7 +341,6 @@ public:
     Kp = this->get_parameter("Kp").as_double();
     Kd = this->get_parameter("Kd").as_double();
     Md = this->get_parameter("Md").as_double();
-
     // Safe limits
     joint_speed_safe_limit =
         this->get_parameter("safe_joint_speed").as_double();
@@ -371,7 +348,6 @@ public:
         this->get_parameter("safe_effort_perc").as_double();
     error_pose_norm_safe_limit =
         this->get_parameter("safe_error_pose_norm").as_double();
-
     control_loop_rate = std::make_shared<rclcpp::Rate>(
         this->get_parameter("control_freq").as_double(), this->get_clock());
     clamp = this->get_parameter("clamp").as_bool();
@@ -416,41 +392,8 @@ public:
     auto set_cartesian_cmd =
         [this](
             const panda_interfaces::msg::CartesianCommand::ConstSharedPtr msg) {
-          RCLCPP_INFO_ONCE(this->get_logger(), "Entered callback");
           desired_cartesian_box.try_set(*msg);
-          // std::cout << "im here";
-          // std::lock_guard<std::mutex> lock(desired_pose_mutex);
-          // desired_pose = std::make_shared<Pose>(msg);
-          // desired_pose_raw = msg;
         };
-    auto set_desired_pose = [](const Pose::SharedPtr msg) {
-      // std::cout << "im here";
-      // std::lock_guard<std::mutex> lock(desired_pose_mutex);
-      // desired_pose = std::make_shared<Pose>(msg);
-      // desired_pose_raw = msg;
-    };
-    auto set_desired_twist = [](const Twist::SharedPtr msg) {
-      // RCLCPP_INFO_STREAM(this->get_logger(), "Received desired twist");
-      // std::lock_guard<std::mutex> lock(desired_twist_mutex);
-      // desired_twist = msg;
-      // desired_twist_vec[0] = msg.linear.x;
-      // desired_twist_vec[1] = msg.linear.y;
-      // desired_twist_vec[2] = msg.linear.z;
-      // desired_twist_vec[3] = msg.angular.x;
-      // desired_twist_vec[4] = msg.angular.y;
-      // desired_twist_vec[5] = msg.angular.z;
-    };
-    auto set_desired_accel = [](const Accel::SharedPtr msg) {
-      // RCLCPP_INFO_STREAM(this->get_logger(), "Received desired accel");
-      // std::lock_guard<std::mutex> lock(desired_accel_mutex);
-      // desired_accel = msg;
-      // desired_accel_vec[0] = msg.linear.x;
-      // desired_accel_vec[1] = msg.linear.y;
-      // desired_accel_vec[2] = msg.linear.z;
-      // desired_accel_vec[3] = msg.angular.x;
-      // desired_accel_vec[4] = msg.angular.y;
-      // desired_accel_vec[5] = msg.angular.z;
-    };
 
     auto set_external_tau_cb = [this](const JointTorqueMeasureStamped msg) {
       for (int i = 0; i < 7; i++) {
@@ -462,18 +405,6 @@ public:
         this->create_subscription<panda_interfaces::msg::CartesianCommand>(
             "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS(),
             set_cartesian_cmd);
-
-    // desired_pose_sub = this->create_subscription<Pose>(
-    //     panda_interface_names::panda_pose_cmd_topic_name,
-    //     panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_pose);
-    //
-    // desired_twist_sub = this->create_subscription<Twist>(
-    //     panda_interface_names::panda_twist_cmd_topic_name,
-    //     panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_twist);
-    //
-    // desired_accel_sub = this->create_subscription<Accel>(
-    //     panda_interface_names::panda_accel_cmd_topic_name,
-    //     panda_interface_names::DEFAULT_TOPIC_QOS(), set_desired_accel);
 
     external_tau_sub = this->create_subscription<JointTorqueMeasureStamped>(
         panda_interface_names::torque_sensor_topic_name,
@@ -487,7 +418,6 @@ public:
         panda_interface_names::DEFAULT_TOPIC_QOS());
 
     // Compliance mode Service
-
     auto compliance_mode_cb =
         [this](const panda_interfaces::srv::SetComplianceMode_Request::SharedPtr
                    request,
@@ -553,81 +483,6 @@ public:
             this->create_publisher<JointState>(
                 panda_interface_names::joint_state_topic_name,
                 panda_interface_names::DEFAULT_TOPIC_QOS()));
-
-    min_singular_val_pub =
-        this->create_publisher<panda_interfaces::msg::DoubleStamped>(
-            panda_interface_names::min_singular_value_topic_name,
-            panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    // DEBUGGING
-    //
-
-    robot_joint_efforts_pub_debug = this->create_publisher<JointsEffort>(
-        "debug/cmd/effort_no_gravity",
-        panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    gravity_contribute_debug = this->create_publisher<JointsEffort>(
-        "debug/cmd/gravity", panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    pose_error_debug = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-        "debug/error/pose", panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    velocity_error_debug = this->create_publisher<TwistStamped>(
-        "debug/error/velocity",
-        panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    desired_pose_debug = this->create_publisher<PoseStamped>(
-        "debug/desired_pose",
-        panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    desired_velocity_debug = this->create_publisher<TwistStamped>(
-        "debug/desired_velocity",
-        panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    desired_acceleration_debug = this->create_publisher<AccelStamped>(
-        "debug/desired_acceleration",
-        panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    current_pose_debug = this->create_publisher<PoseStamped>(
-        "debug/current_pose",
-        panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    current_velocity_debug = this->create_publisher<TwistStamped>(
-        "debug/current_velocity",
-        panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    y_contribute_debug = this->create_publisher<JointsEffort>(
-        "debug/cmd/y_contribute",
-        panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    y_cartesian_contribute_debug =
-        this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-            "debug/cmd/y_cartesian_contribute",
-            panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    lamda_dls_debug =
-        this->create_publisher<panda_interfaces::msg::DoubleStamped>(
-            "debug/lambda", panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    manipulability_index_debug =
-        this->create_publisher<panda_interfaces::msg::DoubleStamped>(
-            "debug/manipulability_index",
-            panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    manipulability_index_grad_debug =
-        this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-            "debug/manipulability_index_grad",
-            panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    joint_limits_index_debug =
-        this->create_publisher<panda_interfaces::msg::DoubleStamped>(
-            "debug/joint_limits_index",
-            panda_interface_names::CONTROLLER_PUBLISHER_QOS());
-
-    joint_limits_index_grad_debug =
-        this->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-            "debug/joint_limits_index_grad",
-            panda_interface_names::CONTROLLER_PUBLISHER_QOS());
 
     tf_buffer = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener =
@@ -746,28 +601,7 @@ public:
         // Access the optional RealtimeThreadSafeBox
         // If it has something use the new value, else use the latest value
         // available
-        desired_cartesian_cmd_opt = desired_cartesian_box.try_get();
-        if (desired_cartesian_cmd_opt.has_value()) {
-          desired_cartesian_cmd = desired_cartesian_cmd_opt.value();
-
-          desired_pose_raw = desired_cartesian_cmd.pose;
-          desired_twist = desired_cartesian_cmd.twist;
-          desired_accel = desired_cartesian_cmd.accel;
-
-          desired_twist_vec[0] = desired_twist.linear.x;
-          desired_twist_vec[1] = desired_twist.linear.y;
-          desired_twist_vec[2] = desired_twist.linear.z;
-          desired_twist_vec[3] = desired_twist.angular.x;
-          desired_twist_vec[4] = desired_twist.angular.y;
-          desired_twist_vec[5] = desired_twist.angular.z;
-
-          desired_accel_vec[0] = desired_accel.linear.x;
-          desired_accel_vec[1] = desired_accel.linear.y;
-          desired_accel_vec[2] = desired_accel.linear.z;
-          desired_accel_vec[3] = desired_accel.angular.x;
-          desired_accel_vec[4] = desired_accel.angular.y;
-          desired_accel_vec[5] = desired_accel.angular.z;
-        }
+        update_cartesian_cmd();
 
         auto now = this->now();
 
@@ -800,18 +634,12 @@ public:
         // frame
         if (compliance_mode.load() && EE_to_K_transform.has_value()) {
           // I have to get Kstiffness frame pose if also EE_to_K has value
-          try {
-            panda_franka->setK(EE_to_K_transform.value());
-          } catch (const franka::Exception &ex) {
-          }
-
           panda_franka->setK(ident_transform);
           current_pose = get_pose(
               panda_franka_model->pose(franka::Frame::kStiffness, state));
           jacobian = get_jacobian(panda_franka_model->zeroJacobian(
               franka::Frame::kStiffness, state));
         } else {
-          // panda_franka->setK(ident_transform);
           current_pose =
               get_pose(panda_franka_model->pose(franka::Frame::kFlange, state));
           jacobian = get_jacobian(
@@ -832,21 +660,18 @@ public:
         // Calculate pose error
         {
           Eigen::Quaterniond desired_quat{};
-          desired_quat.w() = desired_pose_raw.orientation.w;
-          desired_quat.x() = desired_pose_raw.orientation.x;
-          desired_quat.y() = desired_pose_raw.orientation.y;
-          desired_quat.z() = desired_pose_raw.orientation.z;
+          desired_quat.w() = desired_pose.orientation.w;
+          desired_quat.x() = desired_pose.orientation.x;
+          desired_quat.y() = desired_pose.orientation.y;
+          desired_quat.z() = desired_pose.orientation.z;
 
           desired_quat.normalize();
           error_quat = desired_quat * current_quat.inverse();
           error_quat.normalize();
 
-          error_pose_vec(0) =
-              desired_pose_raw.position.x - current_pose.position.x;
-          error_pose_vec(1) =
-              desired_pose_raw.position.y - current_pose.position.y;
-          error_pose_vec(2) =
-              desired_pose_raw.position.z - current_pose.position.z;
+          error_pose_vec(0) = desired_pose.position.x - current_pose.position.x;
+          error_pose_vec(1) = desired_pose.position.y - current_pose.position.y;
+          error_pose_vec(2) = desired_pose.position.z - current_pose.position.z;
           error_pose_vec(3) = error_quat.x();
           error_pose_vec(4) = error_quat.y();
           error_pose_vec(5) = error_quat.z();
@@ -921,7 +746,7 @@ public:
                     //       get_j_dot(get_jacob, current_joints_config_vec,
                     //                 current_joints_speed) *
                     //       current_joints_speed
-                    // - h_e
+                    // + h_e
 
                 );
           } else {
@@ -935,7 +760,7 @@ public:
                     //       get_j_dot(get_jacob, current_joints_config_vec,
                     //                 current_joints_speed) *
                     //       current_joints_speed
-                    // - h_e
+                    // + h_e
 
                 );
           }
@@ -1007,9 +832,8 @@ public:
               this->get_logger(),
               "Control input vec Nan or Inf: "
                   << control_input_vec
-                  << ", Desired pose: " << desired_pose_raw.position.x << ", "
-                  << desired_pose_raw.position.y << ", "
-                  << desired_pose_raw.position.z
+                  << ", Desired pose: " << desired_pose.position.x << ", "
+                  << desired_pose.position.y << ", " << desired_pose.position.z
                   << ", Desired twist: " << desired_twist_vec
                   << ", Desired accel: " << desired_accel_vec
                   << ", Jacobian pinv: " << jacobian_pinv << ", error twist: "
@@ -1140,29 +964,7 @@ public:
       }
 
       // Initializing control setpoint variables
-      desired_pose_raw = get_pose(panda_franka_model.value().pose(
-          franka::Frame::kFlange, panda_franka->readOnce()));
-      desired_pose = std::make_shared<Pose>(desired_pose_raw);
-
-      desired_cartesian_cmd.pose = desired_pose_raw;
-      desired_twist = desired_cartesian_cmd.twist;
-      desired_accel = desired_cartesian_cmd.accel;
-
-      desired_twist_vec[0] = 0.0;
-      desired_twist_vec[1] = 0.0;
-      desired_twist_vec[2] = 0.0;
-      desired_twist_vec[3] = 0.0;
-      desired_twist_vec[4] = 0.0;
-      desired_twist_vec[5] = 0.0;
-
-      desired_accel_vec[0] = 0.0;
-      desired_accel_vec[1] = 0.0;
-      desired_accel_vec[2] = 0.0;
-      desired_accel_vec[3] = 0.0;
-      desired_accel_vec[4] = 0.0;
-      desired_accel_vec[5] = 0.0;
-
-      desired_cartesian_box.set(desired_cartesian_cmd);
+      init_cartesian_cmd();
 
       // Configuring initial external tau bias
       Eigen::Map<const Eigen::Vector<double, 7>> initial_tau{
@@ -1177,16 +979,23 @@ public:
                                                 << initial_extern_tau[4] << ", "
                                                 << initial_extern_tau[5] << ", "
                                                 << initial_extern_tau[6]);
+      Eigen::Map<const Eigen::Vector<double, 6>> initial_h_e{
+          panda_franka->readOnce().O_F_ext_hat_K.data()};
+
+      RCLCPP_INFO_STREAM(this->get_logger(),
+                         "Initial h_e: " << h_e[0] << ", " << h_e[1] << ", "
+                                         << h_e[2] << ", " << h_e[3] << ", "
+                                         << h_e[4] << ", " << h_e[5]);
 
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Desired pose is: ["
-                             << desired_pose->position.x << ", "
-                             << desired_pose->position.y << ", "
-                             << desired_pose->position.z << "], ["
-                             << desired_pose->orientation.w << ", "
-                             << desired_pose->orientation.x << ", "
-                             << desired_pose->orientation.y << ", "
-                             << desired_pose->orientation.z << "]");
+                             << desired_pose.position.x << ", "
+                             << desired_pose.position.y << ", "
+                             << desired_pose.position.z << "], ["
+                             << desired_pose.orientation.w << ", "
+                             << desired_pose.orientation.x << ", "
+                             << desired_pose.orientation.y << ", "
+                             << desired_pose.orientation.z << "]");
 
       RCLCPP_INFO_STREAM(
           this->get_logger(),
@@ -1203,10 +1012,10 @@ public:
               << desired_twist_vec[4] << ", " << desired_twist_vec[5] << "]");
 
       // Init old quaternion for quaternion continuity
-      old_quaternion.w() = desired_pose->orientation.w;
-      old_quaternion.x() = desired_pose->orientation.x;
-      old_quaternion.y() = desired_pose->orientation.y;
-      old_quaternion.z() = desired_pose->orientation.z;
+      old_quaternion.w() = desired_pose.orientation.w;
+      old_quaternion.x() = desired_pose.orientation.x;
+      old_quaternion.y() = desired_pose.orientation.y;
+      old_quaternion.z() = desired_pose.orientation.z;
       old_quaternion.normalize();
 
       if (!rclcpp::ok()) {
@@ -1266,128 +1075,6 @@ public:
           //   RCLCPP_INFO_STREAM(this->get_logger(),
           //                      "Stopped EE_to_K (wrist in touch)
           //                      thread");
-          // }}.detach();
-          // std::thread{[this] {
-          //   // TODO: handle 2 things:
-          //   // Check if base robot link exists
-          //   std::map<std::string, geometry_msgs::msg::TransformStamped>
-          //       robot_links_body_keypoints_tfs;
-          //   std::map<std::string, geometry_msgs::msg::TransformStamped>
-          //       robot_base_joints_tfs;
-          //
-          //   while (!start_flag.load()) {
-          //     std::this_thread::sleep_for(1s);
-          //   }
-          //
-          //   RCLCPP_INFO_STREAM(this->get_logger(),
-          //                      "Calculate proximity thread started");
-          //
-          //   rclcpp::Time last_time{this->now()};
-          //   rclcpp::Time last_time_print{this->now()};
-          //
-          //   while (start_flag.load() && rclcpp::ok()) {
-          //
-          //     bool print_every_half_sec =
-          //         (this->now() - last_time_print).seconds() > 0.5;
-          //
-          //     if (tf_buffer->canTransform(robot_base_frame_name, "world",
-          //                                 tf2::TimePointZero)) {
-          //       // Robot base exists, now get the transforms of the body
-          //       // keypoints wrt the base
-          //       auto now = this->now();
-          //       // Clear the map to avoid getting false data
-          //       robot_links_body_keypoints_tfs.clear();
-          //       // Cycle through all the body keypoints frame: get the
-          //       transform
-          //       // if the body frame is relatively new in the tf2 system and
-          //       // obvoiusly exists
-          //       for (auto keypoint_frame_name :
-          //            image_constants::coco_keypoints) {
-          //         try {
-          //           auto keypoint_frame = tf_buffer->lookupTransform(
-          //               keypoint_frame_name, "world", tf2::TimePointZero);
-          //
-          //           if (now - keypoint_frame.header.stamp >= max_tf_age) {
-          //             continue;
-          //           }
-          //         } catch (const tf2::TransformException &ex) {
-          //           RCLCPP_ERROR_STREAM_THROTTLE(
-          //               this->get_logger(), *this->get_clock(), 10000.0,
-          //               "Keypoint transform not found: " << ex.what());
-          //           continue;
-          //         }
-          //
-          //         for (auto robot_frame_name :
-          //              panda_interface_names::panda_link_names) {
-          //           try {
-          //             auto tf = tf_buffer->lookupTransform(robot_frame_name,
-          //                                                  keypoint_frame_name,
-          //                                                  tf2::TimePointZero);
-          //             robot_links_body_keypoints_tfs[robot_frame_name +
-          //             "_to_" +
-          //                                            keypoint_frame_name] =
-          //                                            tf;
-          //           } catch (const tf2::TransformException &ex) {
-          //             // Tf does not exists
-          //           }
-          //         }
-          //       }
-          //
-          //       // Now will check for proximity with the entire robot
-          //       bool human_in_area = false;
-          //       for (std::pair<std::string,
-          //                      geometry_msgs::msg::TransformStamped>
-          //                named_tf : robot_links_body_keypoints_tfs) {
-          //         double dist = geom_utils::distance(named_tf.second);
-          //         if (dist <= robot_radius_area) {
-          //           human_in_area = true;
-          //           break;
-          //         }
-          //       }
-          //       // Increase the time the human have been seen inside the area
-          //       or
-          //       // decrease if he's not there
-          //       {
-          //         std::lock_guard<std::shared_mutex>
-          //         mutex(presence_state.mut); if (human_in_area) {
-          //           presence_state.time_present += (this->now() - last_time);
-          //         } else {
-          //           presence_state.time_present -= (this->now() - last_time);
-          //         }
-          //         // Normalize the time according to limit
-          //         presence_state.normalize_time();
-          //         if (human_in_area &&
-          //             presence_state.time_present.seconds() >=
-          //                 presence_state.MAX_TIME &&
-          //             !presence_state.human_present) {
-          //           // If human is inside by max time at least then he's
-          //           surely
-          //           // in area
-          //           RCLCPP_INFO_STREAM(this->get_logger(),
-          //                              "The human entered the robot area");
-          //           presence_state.human_present = true;
-          //         } else if (!human_in_area &&
-          //                    presence_state.time_present.seconds() == 0.0 &&
-          //                    presence_state.human_present) {
-          //           RCLCPP_INFO_STREAM(this->get_logger(),
-          //                              "The human left the robot area");
-          //           presence_state.human_present = false;
-          //         }
-          //
-          //         // We leave the mutex property here because we need to
-          //         recall
-          //         // other tfs
-          //
-          //         if (presence_state.human_present) {
-          //           start_flag.store(false);
-          //           RCLCPP_ERROR_STREAM(this->get_logger(),
-          //                               "HUMAN PRESENT IN THE AREA");
-          //         }
-          //       }
-          //     }
-          //
-          //     std::this_thread::sleep_for(10ms);
-          //   }
           // }}.detach();
 
           // TFs publisher thread according to fr3 link names
@@ -1646,33 +1333,6 @@ private:
       joint_states_pub{};
   Publisher<std_msgs::msg::String>::SharedPtr wrist_contact_index_pub{};
 
-  // DEBUG PUBLISHERS
-  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr
-      min_singular_val_pub{};
-  Publisher<PoseStamped>::SharedPtr pose_error_debug{};
-  Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub_debug{};
-  Publisher<JointsEffort>::SharedPtr gravity_contribute_debug{};
-  Publisher<JointsEffort>::SharedPtr y_contribute_debug{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      y_cartesian_contribute_debug{};
-  Publisher<TwistStamped>::SharedPtr velocity_error_debug{};
-  Publisher<PoseStamped>::SharedPtr desired_pose_debug{};
-  Publisher<TwistStamped>::SharedPtr desired_velocity_debug{};
-  Publisher<AccelStamped>::SharedPtr desired_acceleration_debug{};
-  Publisher<PoseStamped>::SharedPtr current_pose_debug{};
-  Publisher<TwistStamped>::SharedPtr current_velocity_debug{};
-  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr lamda_dls_debug{};
-
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      manipulability_index_grad_debug{};
-  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr
-      manipulability_index_debug{};
-
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      joint_limits_index_grad_debug{};
-  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr
-      joint_limits_index_debug{};
-
   // Services
   rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr
       compliance_mode_server;
@@ -1681,7 +1341,6 @@ private:
       wrist_contact_server;
 
   // Robot related variables
-  Robot<7> panda_mine;
   panda::RobotModel panda;
   std::optional<franka::Robot> panda_franka;
   std::optional<franka::Model> panda_franka_model;
@@ -1712,8 +1371,7 @@ private:
   debug_data print_debug;
 
   std::mutex desired_pose_mutex;
-  Pose::SharedPtr desired_pose;
-  Pose desired_pose_raw{};
+  Pose desired_pose{};
   std::mutex desired_twist_mutex;
   std::mutex desired_accel_mutex;
   Eigen::Vector<double, 6> desired_twist_vec = Eigen::Vector<double, 6>::Zero();
@@ -1760,7 +1418,7 @@ private:
   Eigen::VectorXd last_control_input;
 
   // Human detection
-  human_presence presence_state;
+  human_presence::HumanPresentState presence_state;
 
   Eigen::Vector<double, 7>
   joint_limit_index_grad(const Eigen::Vector<double, 7> &current_joint_config,
@@ -1969,19 +1627,79 @@ private:
     joint_max_limits = panda.getModel().upperPositionLimit;
   }
 
-  rclcpp::Subscription<Pose>::SharedPtr desired_pose_sub{};
-  rclcpp::Subscription<Twist>::SharedPtr desired_twist_sub{};
-  rclcpp::Subscription<Accel>::SharedPtr desired_accel_sub{};
+  void init_cartesian_cmd(const std::optional<Eigen::Vector<double, 7>>
+                              &current_joints_pos = std::nullopt) {
+    Pose desired_pose;
+    if (mode == Mode::franka) {
+      // Initializing control setpoint variables
+      desired_pose = get_pose(panda_franka_model.value().pose(
+          franka::Frame::kFlange, panda_franka->readOnce()));
+    } else {
+      if (current_joints_pos.has_value()) {
+        panda.computeAll(current_joints_pos.value(),
+                         Eigen::Vector<double, 7>::Zero());
+        desired_pose = panda.getPose(frame_id_name);
+      } else {
+        RCLCPP_ERROR(this->get_logger(),
+                     "Mode franka/sim_franka but no joints pos specified");
+        rclcpp::shutdown();
+        return;
+      }
+    }
+
+    desired_cartesian_cmd.pose = desired_pose;
+    desired_cartesian_cmd.twist = desired_twist;
+    desired_cartesian_cmd.accel = desired_accel;
+
+    desired_twist_vec[0] = 0.0;
+    desired_twist_vec[1] = 0.0;
+    desired_twist_vec[2] = 0.0;
+    desired_twist_vec[3] = 0.0;
+    desired_twist_vec[4] = 0.0;
+    desired_twist_vec[5] = 0.0;
+
+    desired_accel_vec[0] = 0.0;
+    desired_accel_vec[1] = 0.0;
+    desired_accel_vec[2] = 0.0;
+    desired_accel_vec[3] = 0.0;
+    desired_accel_vec[4] = 0.0;
+    desired_accel_vec[5] = 0.0;
+
+    desired_cartesian_box.set(desired_cartesian_cmd);
+  }
+
+  void update_cartesian_cmd() {
+    desired_cartesian_cmd_opt = desired_cartesian_box.try_get();
+    if (desired_cartesian_cmd_opt.has_value()) {
+      desired_cartesian_cmd = desired_cartesian_cmd_opt.value();
+
+      desired_pose = desired_cartesian_cmd.pose;
+      desired_twist = desired_cartesian_cmd.twist;
+      desired_accel = desired_cartesian_cmd.accel;
+
+      desired_twist_vec[0] = desired_twist.linear.x;
+      desired_twist_vec[1] = desired_twist.linear.y;
+      desired_twist_vec[2] = desired_twist.linear.z;
+      desired_twist_vec[3] = desired_twist.angular.x;
+      desired_twist_vec[4] = desired_twist.angular.y;
+      desired_twist_vec[5] = desired_twist.angular.z;
+
+      desired_accel_vec[0] = desired_accel.linear.x;
+      desired_accel_vec[1] = desired_accel.linear.y;
+      desired_accel_vec[2] = desired_accel.linear.z;
+      desired_accel_vec[3] = desired_accel.angular.x;
+      desired_accel_vec[4] = desired_accel.angular.y;
+      desired_accel_vec[5] = desired_accel.angular.z;
+    }
+  }
+
   DebugPublisher debug_pub;
 };
 
 void ImpedanceController::control() {
   // Impedance controller
 
-  Eigen::Vector<double, 7> non_linear_effects;
   Eigen::Vector<double, 7> control_input;
-  Eigen::Vector<double, 6> h_e;
-  Eigen::VectorXd gravity;
   Eigen::Vector<double, 7> y;
   Eigen::Vector<double, 6> y_cartesian;
   Eigen::Matrix<double, 7, 6> jacobian_pinv;
@@ -1989,13 +1707,6 @@ void ImpedanceController::control() {
   Eigen::Vector<double, 7> current_joints_speed =
       Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 7> last_joints_speed = Eigen::Vector<double, 7>::Zero();
-  Eigen::Vector<double, 6> current_twist;
-  Eigen::Vector<double, 6> error_twist;
-  Pose current_pose_tmp;
-  Eigen::Quaterniond current_quat;
-  Eigen::Quaterniond error_quat{};
-  Eigen::Vector<double, 6> error_pose_vec{};
-  Eigen::Quaterniond desired_quat{};
   Eigen::Matrix<double, 6, 7> jacobian;
   Eigen::Matrix<double, 6, 6> B_a;
   Eigen::Matrix<double, 7, 6> jacobian_cap;
@@ -2026,26 +1737,25 @@ void ImpedanceController::control() {
   current_joint_config = nullptr;
   while (!current_joint_config) {
   }
+
   for (size_t i = 0; i < current_joint_config->position.size(); i++) {
     current_joints_config_vec[i] = current_joint_config->position[i];
   }
-  panda.computeAll(current_joints_config_vec, Eigen::Vector<double, 7>::Zero());
-  desired_pose = std::make_shared<Pose>(panda.getPose(frame_id_name));
+  init_cartesian_cmd(current_joints_config_vec);
+  update_cartesian_cmd();
 
   RCLCPP_INFO_STREAM(
       this->get_logger(),
       "Desired Position: ["
-          << desired_pose->position.x << ", " << desired_pose->position.y
-          << ", " << desired_pose->position.z << "]; Orientation: [] "
-          << desired_pose->orientation.w << ", " << desired_pose->orientation.x
-          << ", " << desired_pose->orientation.y << ", "
-          << desired_pose->orientation.z << "]");
+          << desired_pose.position.x << ", " << desired_pose.position.y << ", "
+          << desired_pose.position.z << "]; Orientation: [] "
+          << desired_pose.orientation.w << ", " << desired_pose.orientation.x
+          << ", " << desired_pose.orientation.y << ", "
+          << desired_pose.orientation.z << "]");
 
   // Coefficient for dynamic lambda damping
-  double alpha = this->get_parameter("alpha").as_double();
   double k_max = this->get_parameter("k_max").as_double();
   double eps = this->get_parameter("eps").as_double();
-
   double task_gain = this->get_parameter("task_gain").as_double();
 
   double orient_scale = 1.0;
@@ -2064,14 +1774,8 @@ void ImpedanceController::control() {
   MD.diagonal() = MD_;
   auto MD_1 = MD.inverse();
 
-  RCLCPP_INFO_STREAM(this->get_logger(), "MD matrix and inverse: " << std::endl
-                                                                   << MD
-                                                                   << std::endl
-                                                                   << MD_1);
-
   while (start_flag.load() && rclcpp::ok()) {
 
-    // RCLCPP_INFO(this->get_logger(), "Entered cycle");
     pose_debug.header.stamp = this->now();
     twist_debug.header.stamp = this->now();
     accel_debug.header.stamp = this->now();
@@ -2080,15 +1784,15 @@ void ImpedanceController::control() {
     y_cartesian_stamped.header.stamp = this->now();
     sigma.header.stamp = this->now();
 
-    {
+    update_cartesian_cmd();
 
+    {
       std::lock_guard<std::mutex> lock(joint_state_mutex);
       for (size_t i = 0; i < current_joint_config->position.size(); i++) {
         current_joints_config_vec[i] = current_joint_config->position[i];
       }
 
       for (size_t i = 0; i < current_joint_config->position.size(); i++) {
-        // current_joints_speed[i] = current_joint_config->velocity[i];
         current_joints_speed[i] =
             franka::lowpassFilter(0.001, current_joint_config->velocity[i],
                                   current_joints_speed[i], 20.0);
@@ -2098,7 +1802,8 @@ void ImpedanceController::control() {
     panda.computeAll(current_joints_config_vec, current_joints_speed);
 
     // Get current pose
-    current_pose_tmp = panda.getPose(frame_id_name);
+    Pose current_pose_tmp = panda.getPose(frame_id_name);
+    Eigen::Quaterniond current_quat{};
     current_quat.w() = current_pose_tmp.orientation.w;
     current_quat.x() = current_pose_tmp.orientation.x;
     current_quat.y() = current_pose_tmp.orientation.y;
@@ -2107,39 +1812,30 @@ void ImpedanceController::control() {
     current_quat = quaternionContinuity(current_quat, old_quaternion);
     old_quaternion = current_quat;
 
+    Eigen::Quaterniond desired_quat{};
+    Eigen::Quaterniond error_quat{};
+    Eigen::Vector<double, 6> error_pose_vec{};
     // Calculate pose error
     {
       std::lock_guard<std::mutex> lock(desired_pose_mutex);
 
-      // Get desired pose
-      desired_quat.w() = desired_pose->orientation.w;
-      desired_quat.x() = desired_pose->orientation.x;
-      desired_quat.y() = desired_pose->orientation.y;
-      desired_quat.z() = desired_pose->orientation.z;
+      desired_quat.w() = desired_pose.orientation.w;
+      desired_quat.x() = desired_pose.orientation.x;
+      desired_quat.y() = desired_pose.orientation.y;
+      desired_quat.z() = desired_pose.orientation.z;
       desired_quat.normalize();
 
       error_quat = desired_quat * current_quat.inverse();
       error_quat.normalize();
 
-      error_pose_vec(0) =
-          desired_pose->position.x - current_pose_tmp.position.x;
-      error_pose_vec(1) =
-          desired_pose->position.y - current_pose_tmp.position.y;
-      error_pose_vec(2) =
-          desired_pose->position.z - current_pose_tmp.position.z;
+      error_pose_vec(0) = desired_pose.position.x - current_pose_tmp.position.x;
+      error_pose_vec(1) = desired_pose.position.y - current_pose_tmp.position.y;
+      error_pose_vec(2) = desired_pose.position.z - current_pose_tmp.position.z;
 
-      // Quaternion vec error
       error_pose_vec(3) = error_quat.x();
       error_pose_vec(4) = error_quat.y();
       error_pose_vec(5) = error_quat.z();
-
-      // error_pose_vec(3) = 2 * error_quat.x();
-      // error_pose_vec(4) = 2 * error_quat.y();
-      // error_pose_vec(5) = 2 * error_quat.z();
     }
-
-    // Update robot model
-    //
 
     // Calculate quantities for control
     //
@@ -2149,34 +1845,18 @@ void ImpedanceController::control() {
       jacobian = panda.getGeometricalJacobian(frame_id_name);
     }
 
-    Eigen::Matrix<double, 6, 6> T_a;
-    // {
-    //   Eigen::Vector3d euler_angles =
-    //   current_quat.toRotationMatrix().eulerAngles(2, 1, 2);
-    //   auto T = computeTMatrix(euler_angles);
-    //   T_a.setZero();
-    //   T_a.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
-    //   T_a.block<3, 3>(3, 3) = T.inverse();
-    //   jacobian = T_a.inverse() * jacobian;
-    // }
-
     // Calculate jacobian SVD
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU |
                                                         Eigen::ComputeThinV);
     double sigma_min = svd.singularValues().tail(1)(0);
 
-    // RCLCPP_INFO(this->get_logger(), "Calculated jacob");
     // Doesn't account for friction
-    non_linear_effects = panda.getNonLinearEffects(current_joints_config_vec,
-                                                   current_joints_speed);
-    gravity = panda.getGravityVector(current_joints_config_vec);
-    auto mass_matrix = panda.getMassMatrix(current_joints_config_vec);
-
-    // DYNAMIC LAMBDA BASED ON MINIMUM SINGULAR VALUE
-    //
-    // Exponential
-    // double lambda = std::exp(-alpha * sigma_min);
-    // lambda = (lambda < 1e-4 ? 0.0 : lambda);
+    Eigen::Vector<double, 7> non_linear_effects = panda.getNonLinearEffects(
+        current_joints_config_vec, current_joints_speed);
+    Eigen::Vector<double, 7> gravity =
+        panda.getGravityVector(current_joints_config_vec);
+    Eigen::Matrix<double, 7, 7> mass_matrix =
+        panda.getMassMatrix(current_joints_config_vec);
 
     // Quadratic
     double lambda = k_max * (1 - pow(sigma_min, 2) / pow(eps, 2));
@@ -2184,15 +1864,7 @@ void ImpedanceController::control() {
 
     jacobian_pinv = compute_jacob_pseudoinv(jacobian, lambda);
 
-    B_a = (jacobian * mass_matrix.inverse() * jacobian.transpose() +
-           lambda * Eigen::Matrix<double, 6, 6>::Identity())
-              .inverse();
-
-    jacobian_cap = mass_matrix.inverse() * jacobian.transpose() * B_a;
-
-    tau_projector = Eigen::Matrix<double, 7, 7>::Identity() -
-                    jacobian.transpose() * jacobian_cap.transpose();
-
+    Eigen::Vector<double, 6> current_twist, error_twist;
     {
       std::lock_guard<std::mutex> lock(desired_twist_mutex);
       current_twist = jacobian * current_joints_speed;
@@ -2201,54 +1873,32 @@ void ImpedanceController::control() {
 
     {
       std::lock_guard<std::mutex> lock(desired_accel_mutex);
-      // h_e = jacobian_pinv.transpose() * extern_tau;
+      h_e = jacobian_pinv.transpose() * extern_tau;
+      RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "h_e: " << h_e);
 
       if (compliance_mode.load()) {
 
         y = jacobian_pinv * MD_1 *
             (
 
-                -KD * current_twist -
-                MD * panda.computeHessianTimesQDot(current_joints_config_vec,
-                                                   current_joints_speed,
-                                                   frame_id_name)
-                // -
-                //       h_e
+                -KD * current_twist
+                // + h_e
 
             );
-        // control_input =
-        //     mass_matrix * y + non_linear_effects + extern_tau - gravity;
         control_input = mass_matrix * y + non_linear_effects - gravity;
       } else {
-        y_cartesian =
-            MD_1 *
-            (MD * desired_accel_vec + KD * error_twist + KP * error_pose_vec
-             // -
-             //    MD *
-             //        get_j_dot(get_jacob, current_joints_config_vec,
-             //                  current_joints_speed) *
-             //        current_joints_speed
-             // MD *
-             // panda.computeHessianTimesQDot(current_joints_config_vec,
-             //                                    current_joints_speed,
-             //                                    frame_id_name)
-             // -
-             //    h_e
-            );
+        y_cartesian = MD_1 * (MD * desired_accel_vec + KD * error_twist +
+                              KP * error_pose_vec
+                              // + h_e
+                             );
 
         y = jacobian_pinv * y_cartesian;
-        control_input = mass_matrix * y + non_linear_effects - gravity;
       }
     }
 
     control_input =
-        mass_matrix * y + non_linear_effects - gravity +
+        mass_matrix * y + non_linear_effects + extern_tau - gravity +
         task_gain * tau_projector * (manip_grad(current_joints_config_vec));
-
-    // control_input = mass_matrix * y + non_linear_effects + extern_tau -
-    //                 gravity +
-    //                 task_gain * tau_projector *
-    //                     (-joint_limit_index_grad(current_joints_config_vec));
 
     // Clamping control input
     //
@@ -2278,7 +1928,7 @@ void ImpedanceController::control() {
       debug_pub.data().current_twist = current_twist;
       debug_pub.data().current_pose = current_pose_tmp;
       debug_pub.data().des_twist = desired_twist;
-      debug_pub.data().des_pose = *desired_pose;
+      debug_pub.data().des_pose = desired_pose;
       debug_pub.data().des_accel = desired_accel;
       debug_pub.data().error_pose_vec.head(3) = error_pose_vec.head(3);
       debug_pub.data().error_pose_vec.tail(3) = error_pose_vec.tail(3);
@@ -2288,6 +1938,9 @@ void ImpedanceController::control() {
       }
       for (int i = 0; i < control_input.size(); i++) {
         debug_pub.data().tau_d_last.value()[i] = control_input[i];
+      }
+      for (int i = 0; i < control_input.size(); i++) {
+        debug_pub.data().tau_d_calculated.value()[i] = control_input[i];
       }
       debug_pub.data().y = y;
       debug_pub.data().y_cartesian = y_cartesian;
@@ -2370,8 +2023,8 @@ void ImpedanceController::control_libfranka_sim() {
     RCLCPP_INFO_STREAM(this->get_logger(),
                        "Joint " << i + 1 << ": " << state.q[i]);
   }
-  desired_pose = std::make_shared<Pose>(
-      get_pose(panda_franka_model->pose(franka::Frame::kFlange, state)));
+  desired_pose =
+      get_pose(panda_franka_model->pose(franka::Frame::kFlange, state));
 
   auto get_jacob = [this](const Eigen::Vector<double, 7> &current_joint_pos) {
     auto state = franka::RobotState{};
@@ -2386,11 +2039,11 @@ void ImpedanceController::control_libfranka_sim() {
   RCLCPP_INFO_STREAM(
       this->get_logger(),
       "Desired Position: ["
-          << desired_pose->position.x << ", " << desired_pose->position.y
-          << ", " << desired_pose->position.z << "]; Orientation: [] "
-          << desired_pose->orientation.w << ", " << desired_pose->orientation.x
-          << ", " << desired_pose->orientation.y << ", "
-          << desired_pose->orientation.z << "]");
+          << desired_pose.position.x << ", " << desired_pose.position.y << ", "
+          << desired_pose.position.z << "]; Orientation: [] "
+          << desired_pose.orientation.w << ", " << desired_pose.orientation.x
+          << ", " << desired_pose.orientation.y << ", "
+          << desired_pose.orientation.z << "]");
 
   // Coefficient for dynamic lambda damping
   double alpha = this->get_parameter("alpha").as_double();
@@ -2516,18 +2169,18 @@ void ImpedanceController::control_libfranka_sim() {
 
       // Get desired pose
       Eigen::Quaterniond desired_quat{};
-      desired_quat.w() = desired_pose_raw.orientation.w;
-      desired_quat.x() = desired_pose_raw.orientation.x;
-      desired_quat.y() = desired_pose_raw.orientation.y;
-      desired_quat.z() = desired_pose_raw.orientation.z;
+      desired_quat.w() = desired_pose.orientation.w;
+      desired_quat.x() = desired_pose.orientation.x;
+      desired_quat.y() = desired_pose.orientation.y;
+      desired_quat.z() = desired_pose.orientation.z;
       desired_quat.normalize();
 
       error_quat = desired_quat * current_quat.inverse();
       error_quat.normalize();
 
-      error_pose_vec(0) = desired_pose_raw.position.x - current_pose.position.x;
-      error_pose_vec(1) = desired_pose_raw.position.y - current_pose.position.y;
-      error_pose_vec(2) = desired_pose_raw.position.z - current_pose.position.z;
+      error_pose_vec(0) = desired_pose.position.x - current_pose.position.x;
+      error_pose_vec(1) = desired_pose.position.y - current_pose.position.y;
+      error_pose_vec(2) = desired_pose.position.z - current_pose.position.z;
 
       // Axis angle error
       error_pose_vec(3) = error_quat.x();
@@ -2694,7 +2347,7 @@ void ImpedanceController::control_libfranka_sim() {
                     current_joints_speed) *
           current_joints_speed;
       debug_pub.data().des_twist = desired_twist;
-      debug_pub.data().des_pose = *desired_pose;
+      debug_pub.data().des_pose = desired_pose;
       debug_pub.data().des_accel = desired_accel;
       debug_pub.data().error_pose_vec.head(3) = error_pose_vec.head(3);
       debug_pub.data().error_pose_vec.tail(3) = error_pose_vec.tail(3);

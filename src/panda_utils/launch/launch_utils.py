@@ -148,20 +148,18 @@ def generate_launch_description():
         package='panda_utils',
         executable='loop_cart_traj',
         name='loop_cart_traj_server',
-        prefix = ['taskset -c 11'],
+        prefix = ['taskset -c 5'],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             # 'loop_rate_freq': loop_rate_freq,
         }],
     )
-    clik_cmd_pub = Node(
+    presence_state_node = Node(
         package='panda_utils',
-        executable='clik_cmd_pub',
-        name='clik_cmd_pub',
+        executable='human_presence',
+        name='human_presence',
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
-            'ts': LaunchConfiguration('clik_ts'),
-            'gamma': LaunchConfiguration('clik_gamma'),
         }],
     )
     inverse_dynamics_controller = Node(
@@ -188,7 +186,7 @@ def generate_launch_description():
         name='impedance_controller',
         # prefix=["gdbserver localhost:3000"],
         # prefix=['taskset -c 10 kitty -e gdb -ex run --args'],
-        prefix=['taskset -c 10'],
+        prefix=['taskset -c 6'],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'Kp': LaunchConfiguration('controller_kp'),
@@ -207,26 +205,6 @@ def generate_launch_description():
             'world_base_link': LaunchConfiguration('world_base_link')
         }],
     )
-    # publish_franks_tfs = Node(
-    #     package='panda_utils',
-    #     executable='publish_franks_tfs',
-    #     name='publish_franks_tfs',
-    #     parameters=[{
-    #         'use_sim_time': LaunchConfiguration('use_sim_time'),
-    #         'robot_ip': LaunchConfiguration('robot_ip'),
-    #         'world_base_link': LaunchConfiguration('world_base_link')
-    #     }],
-    # )
-    # external_force_estimator = Node(
-    #     package='panda_utils',
-    #     executable='estimate_external_forces',
-    #     name='estimate_external_forces',
-    #     parameters=[{
-    #         'use_sim_time': LaunchConfiguration('use_sim_time'),
-    #         'robot_ip': LaunchConfiguration('robot_ip'),
-    #         'world_base_link': LaunchConfiguration('world_base_link')
-    #     }],
-    # )
     publish_tfs_and_estimate_forces = Node(
         package='panda_utils',
         executable='estimate_hand_external_force',
@@ -262,12 +240,13 @@ def generate_launch_description():
         stop_traj_server,
         loop_cart_traj_server,
         impedance_controller,
+        presence_state_node,
 
         # publish_franks_tfs,
         # external_force_estimator,
 
         # clik_cmd_pub,
-        # inverse_dynamics_controller,
+        inverse_dynamics_controller,
         # publish_tfs_and_estimate_forces
-        # joint_traj_server,
+        joint_traj_server,
     ])

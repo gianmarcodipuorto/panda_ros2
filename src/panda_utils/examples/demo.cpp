@@ -6,6 +6,7 @@
 #include "panda_interfaces/action/cart_traj.hpp"
 #include "panda_interfaces/action/loop_cart_traj.hpp"
 #include "panda_interfaces/action/stop_traj.hpp"
+#include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_interfaces/msg/human_detected.hpp"
 #include "panda_interfaces/srv/set_compliance_mode.hpp"
 #include "panda_interfaces/srv/wrist_contact.hpp"
@@ -14,6 +15,7 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/color_rgba.hpp"
 #include "std_msgs/msg/u_int8.hpp"
+#include "std_srvs/srv/set_bool.hpp"
 #include <Eigen/src/Core/PartialReduxEvaluator.h>
 #include <Eigen/src/Geometry/Quaternion.h>
 #include <array>
@@ -121,22 +123,6 @@ void publish_state(
   pub->publish(color);
 }
 
-struct human_presence {
-  const double MAX_TIME = 1.0;
-  std::shared_mutex mut;
-  bool human_present = false;
-  rclcpp::Duration time_present = rclcpp::Duration::from_seconds(0.0);
-  std::optional<std::string> contact_wrist{std::nullopt};
-
-  void normalize_time() {
-    if (time_present.seconds() > MAX_TIME) {
-      time_present = rclcpp::Duration::from_seconds(MAX_TIME);
-    } else if (time_present.seconds() < 0.0) {
-      time_present = rclcpp::Duration::from_seconds(0.0);
-    }
-  }
-};
-
 void fill_pose_orientation(geometry_msgs::msg::Pose &pose,
                            const Eigen::Quaterniond &orientation) {
 
@@ -196,7 +182,8 @@ double total_task_time;
 const std::string robot_base_frame_name{"fr3_link0"};
 const std::string robot_end_affector_frame{"fr3_joint7"};
 const std::string world_frame{"world"};
-// const rclcpp::Duration max_tf_age = rclcpp::Duration::from_seconds(1.0 / 30.0);
+// const rclcpp::Duration max_tf_age = rclcpp::Duration::from_seconds(1.0
+// / 30.0);
 const rclcpp::Duration max_wrist_tfs_age =
     rclcpp::Duration::from_seconds(1.0 / 5.0);
 // const double robot_radius_area = 1.0;       // meters
@@ -244,9 +231,10 @@ int main(int argc, char **argv) {
 
   geometry_msgs::msg::Pose initial_pose;
   geometry_msgs::msg::Pose desired_pose;
+  panda_interfaces::msg::CartesianCommand cartesian_cmd;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer;
   SceneState state{SceneState::no_state};
-  human_presence presence_state;
+  human_presence::HumanPresentState presence_state;
   std::atomic<bool> threads_run{false};
   LastRobotState last_state;
   JointState joint_states;
@@ -281,6 +269,11 @@ int main(int argc, char **argv) {
       generate_triangle_task(home_pose.position.x, home_pose.position.y,
                              home_pose.position.z, 0.1, 0.1,
                              triangle_orient.normalized(), 4.5);
+  triangle_task_goal.desired_poses[1].orientation.w = 0.9238795;
+  triangle_task_goal.desired_poses[1].orientation.y = 0.3826834;
+
+  triangle_task_goal.desired_poses[1].orientation.w = 0.9238795;
+  triangle_task_goal.desired_poses[1].orientation.y = -0.3826834;
 
   // Topic to read for scene infos
 
@@ -291,7 +284,7 @@ int main(int argc, char **argv) {
   rclcpp::Subscription<JointState>::SharedPtr joint_states_sub =
       sub_node->create_subscription<JointState>(
           panda_interface_names::joint_state_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS(), joint_states_cb);
+          panda_interface_names::CONTROLLER_PUBLISHER_QOS(), joint_states_cb);
 
   auto pose_state_cb = [&pose_state](const PoseStamped msg) {
     pose_state = msg;
@@ -300,7 +293,7 @@ int main(int argc, char **argv) {
   rclcpp::Subscription<PoseStamped>::SharedPtr pose_state_sub =
       sub_node->create_subscription<PoseStamped>(
           panda_interface_names::panda_pose_state_topic_name,
-          panda_interface_names::DEFAULT_TOPIC_QOS(), pose_state_cb);
+          panda_interface_names::CONTROLLER_PUBLISHER_QOS(), pose_state_cb);
 
   tf_buffer = std::make_unique<tf2_ros::Buffer>(sub_node->get_clock());
 
@@ -313,6 +306,13 @@ int main(int argc, char **argv) {
           main_node->create_client<panda_interfaces::srv::SetComplianceMode>(
               panda_interface_names::set_compliance_mode_service_name);
   panda_interfaces::srv::SetComplianceMode_Request compliance_request;
+
+  // Human presence service client
+  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr human_presence_enabler =
+      main_node->create_client<std_srvs::srv::SetBool>(
+          panda_interface_names::enable_human_presence_service_name);
+  std_srvs::srv::SetBool_Request::SharedPtr enable_human_presence_request =
+      std::make_shared<std_srvs::srv::SetBool_Request>();
 
   // Contact joint service
   rclcpp::Client<panda_interfaces::srv::WristContact>::SharedPtr
@@ -335,6 +335,11 @@ int main(int argc, char **argv) {
       main_node->create_publisher<Accel>(
           panda_interface_names::panda_accel_cmd_topic_name,
           panda_interface_names::DEFAULT_TOPIC_QOS());
+  rclcpp::Publisher<panda_interfaces::msg::CartesianCommand>::SharedPtr
+      cartesian_cmd_pub =
+          main_node->create_publisher<panda_interfaces::msg::CartesianCommand>(
+              "/panda/cartesian_cmd",
+              panda_interface_names::DEFAULT_TOPIC_QOS());
 
   rclcpp::Publisher<std_msgs::msg::ColorRGBA>::SharedPtr state_publisher =
       main_node->create_publisher<std_msgs::msg::ColorRGBA>(
@@ -345,8 +350,8 @@ int main(int argc, char **argv) {
     publish_state(state_publisher, state);
   };
 
-  auto send_current_pose_as_cmd = [&pose_cmd_pub, &twist_cmd_pub,
-                                   &accel_cmd_pub](const Pose desired_pose) {
+  auto send_current_pose_as_cmd = [&cartesian_cmd_pub,
+                                   &cartesian_cmd](const Pose desired_pose) {
     Twist twist;
     Accel accel;
 
@@ -364,9 +369,14 @@ int main(int argc, char **argv) {
     accel.angular.y = 0.0;
     accel.angular.z = 0.0;
 
-    twist_cmd_pub->publish(twist);
-    accel_cmd_pub->publish(accel);
-    pose_cmd_pub->publish(desired_pose);
+    cartesian_cmd.twist = twist;
+    cartesian_cmd.accel = accel;
+    cartesian_cmd.pose = desired_pose;
+
+    cartesian_cmd_pub->publish(cartesian_cmd);
+    // twist_cmd_pub->publish(twist);
+    // accel_cmd_pub->publish(accel);
+    // pose_cmd_pub->publish(desired_pose);
   };
 
   // Action clients for trajectories (actions)
@@ -487,6 +497,9 @@ int main(int argc, char **argv) {
   RCLCPP_INFO(main_node->get_logger(), "Waiting for compliance mode server");
   compliance_mode_client->wait_for_service(10s);
 
+  RCLCPP_INFO(main_node->get_logger(), "Waiting for human presence server");
+  human_presence_enabler->wait_for_service(10s);
+
   RCLCPP_INFO(main_node->get_logger(), "Servers UP");
 
   // Go to initial pose
@@ -567,212 +580,216 @@ int main(int argc, char **argv) {
     }
   }};
 
-  std::thread calculate_proximity{[&tf_buffer, &sub_node, &presence_state,
-                                   &threads_run] {
-    // TODO: handle 2 things:
-    // Check if base robot link exists
-    std::map<std::string, geometry_msgs::msg::TransformStamped>
-        robot_links_body_keypoints_tfs;
-    std::map<std::string, geometry_msgs::msg::TransformStamped>
-        robot_base_joints_tfs;
-
-    while (!threads_run.load()) {
-      std::this_thread::sleep_for(1s);
-    }
-
-    RCLCPP_INFO_STREAM(sub_node->get_logger(),
-                       "Calculate proximity thread started");
-
-    rclcpp::Time last_time{sub_node->now()};
-    rclcpp::Time last_time_print{sub_node->now()};
-
-    while (threads_run.load() && rclcpp::ok()) {
-
-      bool print_every_half_sec =
-          (sub_node->now() - last_time_print).seconds() > 0.5;
-
-      if (tf_buffer->canTransform(robot_base_frame_name, world_frame,
-                                  tf2::TimePointZero)) {
-        // Robot base exists, now get the transforms of the body keypoints
-        // wrt the base
-        auto now = sub_node->now();
-        // Clear the map to avoid getting false data
-        robot_links_body_keypoints_tfs.clear();
-        // Cycle through all the body keypoints frame: get the transform if
-        // the body frame is relatively new in the tf2 system and obvoiusly
-        // exists
-        for (auto keypoint_frame_name : image_constants::coco_keypoints) {
-          try {
-            auto keypoint_frame = tf_buffer->lookupTransform(
-                keypoint_frame_name, world_frame, tf2::TimePointZero);
-
-            if (now - keypoint_frame.header.stamp >= max_tf_age) {
-              continue;
-            }
-          } catch (const tf2::TransformException &ex) {
-            continue;
-          }
-
-          for (auto robot_frame_name :
-               panda_interface_names::panda_link_names) {
-            try {
-              auto tf = tf_buffer->lookupTransform(
-                  robot_frame_name, keypoint_frame_name, tf2::TimePointZero);
-              robot_links_body_keypoints_tfs[robot_frame_name + "_to_" +
-                                             keypoint_frame_name] = tf;
-            } catch (const tf2::TransformException &ex) {
-              // Tf does not exists
-            }
-          }
-        }
-
-        if (print_every_half_sec) {
-
-          RCLCPP_INFO_STREAM(sub_node->get_logger(),
-                             robot_links_body_keypoints_tfs.size()
-                                 << " tfs looked");
-        }
-
-        // Now will check for proximity with the entire robot
-        bool human_in_area = false;
-        for (std::pair<std::string, geometry_msgs::msg::TransformStamped>
-                 named_tf : robot_links_body_keypoints_tfs) {
-          double dist = geom_utils::distance(named_tf.second);
-          if (dist <= robot_radius_area) {
-            human_in_area = true;
-            break;
-          }
-        }
-        // Increase the time the human have been seen inside the area or
-        // decrease if he's not there
-        {
-          std::lock_guard<std::shared_mutex> mutex(presence_state.mut);
-          if (human_in_area) {
-            presence_state.time_present += (sub_node->now() - last_time);
-          } else {
-            presence_state.time_present -= (sub_node->now() - last_time);
-          }
-          // Normalize the time according to limit
-          presence_state.normalize_time();
-          if (print_every_half_sec) {
-
-            RCLCPP_INFO_STREAM(sub_node->get_logger(),
-                               "Presence time: "
-                                   << presence_state.time_present.seconds()
-                                   << "[s]");
-          }
-          if (human_in_area &&
-              presence_state.time_present.seconds() >=
-                  presence_state.MAX_TIME &&
-              !presence_state.human_present) {
-            // If human is inside by max time at least then he's surely in
-            // area
-            RCLCPP_INFO_STREAM(sub_node->get_logger(),
-                               "The human entered the robot area");
-            presence_state.human_present = true;
-          } else if (!human_in_area &&
-                     presence_state.time_present.seconds() == 0.0 &&
-                     presence_state.human_present) {
-            RCLCPP_INFO_STREAM(sub_node->get_logger(),
-                               "The human left the robot area");
-            presence_state.human_present = false;
-          }
-          // We leave the mutex property here because we need to recall
-          // other tfs
-        }
-
-        // Now, if the human is in the area, we have to check if he's
-        // touching a joint Don't check if every frame exists, we'll let
-        // throw the exception if doesn't still exist and continue
-        if (presence_state.human_present) {
-
-          std::vector<double> left_wrist_distances;
-          std::vector<double> right_wrist_distances;
-
-          // Calculate distances for left wrist to all links
-          for (auto robot_link_name : panda_interface_names::panda_link_names) {
-            try {
-              auto tf = tf_buffer->lookupTransform(image_constants::left_wrist,
-                                                   robot_link_name,
-                                                   tf2::TimePointZero);
-              if (now - tf.header.stamp <= max_wrist_tfs_age) {
-                left_wrist_distances.push_back(geom_utils::distance(tf));
-              }
-            } catch (const tf2::TransformException &ex) {
-              // Tf does not exist or is too old, skip for this link
-            }
-          }
-
-          // Calculate distances for right wrist to all links
-          for (auto robot_link_name : panda_interface_names::panda_link_names) {
-            try {
-              auto tf = tf_buffer->lookupTransform(image_constants::right_wrist,
-                                                   robot_link_name,
-                                                   tf2::TimePointZero);
-              if (now - tf.header.stamp <= max_wrist_tfs_age) {
-                right_wrist_distances.push_back(geom_utils::distance(tf));
-              }
-            } catch (const tf2::TransformException &ex) {
-              // Tf does not exist or is too old, skip for this link
-            }
-          }
-
-          std::optional<double> mean_dist_left;
-          std::optional<double> min_dist_left = 100;
-          if (!left_wrist_distances.empty()) {
-            double sum = 0.0;
-            for (double d : left_wrist_distances) {
-              if (d < min_dist_left) {
-                min_dist_left = d;
-              }
-              sum += d;
-            }
-            mean_dist_left = sum / left_wrist_distances.size();
-          }
-
-          std::optional<double> mean_dist_right;
-          std::optional<double> min_dist_right = 100;
-          if (!right_wrist_distances.empty()) {
-            double sum = 0.0;
-            for (double d : right_wrist_distances) {
-              if (d < min_dist_right) {
-                min_dist_right = d;
-              }
-              sum += d;
-            }
-            mean_dist_right = sum / right_wrist_distances.size();
-          }
-
-          std::optional<std::string> active_wrist_frame{std::nullopt};
-
-          if (mean_dist_left.has_value() &&
-              (!mean_dist_right.has_value() ||
-               mean_dist_left.value() < mean_dist_right.value()) &&
-              min_dist_left.value() <= min_distance_from_joint) {
-            active_wrist_frame = image_constants::left_wrist;
-          } else if (mean_dist_right.has_value() &&
-                     min_dist_right.value() <= min_distance_from_joint) {
-            active_wrist_frame = image_constants::right_wrist;
-          }
-
-          // We update the contact joint var
-          {
-            std::shared_lock<std::shared_mutex> mutex(presence_state.mut);
-            presence_state.contact_wrist = active_wrist_frame;
-          }
-        }
-      }
-      // - Proximity value as bool, depending on distance from working area
-      // - Minimum distance between each joint of the robot and the human
-      // wrist, if they are in scene
-
-      last_time = sub_node->now();
-      if (print_every_half_sec) {
-        last_time_print = sub_node->now();
-      }
-      std::this_thread::sleep_for(10ms);
-    }
-  }};
+  // std::thread calculate_proximity{[&tf_buffer, &sub_node, &presence_state,
+  //                                  &threads_run] {
+  //   // TODO: handle 2 things:
+  //   // Check if base robot link exists
+  //   std::map<std::string, geometry_msgs::msg::TransformStamped>
+  //       robot_links_body_keypoints_tfs;
+  //   std::map<std::string, geometry_msgs::msg::TransformStamped>
+  //       robot_base_joints_tfs;
+  //
+  //   while (!threads_run.load()) {
+  //     std::this_thread::sleep_for(1s);
+  //   }
+  //
+  //   RCLCPP_INFO_STREAM(sub_node->get_logger(),
+  //                      "Calculate proximity thread started");
+  //
+  //   rclcpp::Time last_time{sub_node->now()};
+  //   rclcpp::Time last_time_print{sub_node->now()};
+  //
+  //   while (threads_run.load() && rclcpp::ok()) {
+  //
+  //     bool print_every_half_sec =
+  //         (sub_node->now() - last_time_print).seconds() > 0.5;
+  //
+  //     if (tf_buffer->canTransform(robot_base_frame_name, world_frame,
+  //                                 tf2::TimePointZero)) {
+  //       // Robot base exists, now get the transforms of the body keypoints
+  //       // wrt the base
+  //       auto now = sub_node->now();
+  //       // Clear the map to avoid getting false data
+  //       robot_links_body_keypoints_tfs.clear();
+  //       // Cycle through all the body keypoints frame: get the transform if
+  //       // the body frame is relatively new in the tf2 system and obvoiusly
+  //       // exists
+  //       for (auto keypoint_frame_name : image_constants::coco_keypoints) {
+  //         try {
+  //           auto keypoint_frame = tf_buffer->lookupTransform(
+  //               keypoint_frame_name, world_frame, tf2::TimePointZero);
+  //
+  //           if (now - keypoint_frame.header.stamp >= max_tf_age) {
+  //             continue;
+  //           }
+  //         } catch (const tf2::TransformException &ex) {
+  //           continue;
+  //         }
+  //
+  //         for (auto robot_frame_name :
+  //              panda_interface_names::panda_link_names) {
+  //           try {
+  //             auto tf = tf_buffer->lookupTransform(
+  //                 robot_frame_name, keypoint_frame_name, tf2::TimePointZero);
+  //             robot_links_body_keypoints_tfs[robot_frame_name + "_to_" +
+  //                                            keypoint_frame_name] = tf;
+  //           } catch (const tf2::TransformException &ex) {
+  //             // Tf does not exists
+  //           }
+  //         }
+  //       }
+  //
+  //       if (print_every_half_sec) {
+  //
+  //         RCLCPP_INFO_STREAM(sub_node->get_logger(),
+  //                            robot_links_body_keypoints_tfs.size()
+  //                                << " tfs looked");
+  //       }
+  //
+  //       // Now will check for proximity with the entire robot
+  //       bool human_in_area = false;
+  //       for (std::pair<std::string, geometry_msgs::msg::TransformStamped>
+  //                named_tf : robot_links_body_keypoints_tfs) {
+  //         double dist = geom_utils::distance(named_tf.second);
+  //         if (dist <= robot_radius_area) {
+  //           human_in_area = true;
+  //           break;
+  //         }
+  //       }
+  //       // Increase the time the human have been seen inside the area or
+  //       // decrease if he's not there
+  //       {
+  //         std::lock_guard<std::shared_mutex> mutex(presence_state.mut);
+  //         if (human_in_area) {
+  //           presence_state.time_present += (sub_node->now() - last_time);
+  //         } else {
+  //           presence_state.time_present -= (sub_node->now() - last_time);
+  //         }
+  //         // Normalize the time according to limit
+  //         presence_state.normalize_time();
+  //         if (print_every_half_sec) {
+  //
+  //           RCLCPP_INFO_STREAM(sub_node->get_logger(),
+  //                              "Presence time: "
+  //                                  << presence_state.time_present.seconds()
+  //                                  << "[s]");
+  //         }
+  //         if (human_in_area &&
+  //             presence_state.time_present.seconds() >=
+  //                 presence_state.MAX_TIME &&
+  //             !presence_state.human_present) {
+  //           // If human is inside by max time at least then he's surely in
+  //           // area
+  //           RCLCPP_INFO_STREAM(sub_node->get_logger(),
+  //                              "The human entered the robot area");
+  //           presence_state.human_present = true;
+  //         } else if (!human_in_area &&
+  //                    presence_state.time_present.seconds() == 0.0 &&
+  //                    presence_state.human_present) {
+  //           RCLCPP_INFO_STREAM(sub_node->get_logger(),
+  //                              "The human left the robot area");
+  //           presence_state.human_present = false;
+  //         }
+  //         // We leave the mutex property here because we need to recall
+  //         // other tfs
+  //       }
+  //
+  //       // Now, if the human is in the area, we have to check if he's
+  //       // touching a joint Don't check if every frame exists, we'll let
+  //       // throw the exception if doesn't still exist and continue
+  //       if (presence_state.human_present) {
+  //
+  //         std::vector<double> left_wrist_distances;
+  //         std::vector<double> right_wrist_distances;
+  //
+  //         // Calculate distances for left wrist to all links
+  //         for (auto robot_link_name :
+  //         panda_interface_names::panda_link_names) {
+  //           try {
+  //             auto tf =
+  //             tf_buffer->lookupTransform(image_constants::left_wrist,
+  //                                                  robot_link_name,
+  //                                                  tf2::TimePointZero);
+  //             if (now - tf.header.stamp <= max_wrist_tfs_age) {
+  //               left_wrist_distances.push_back(geom_utils::distance(tf));
+  //             }
+  //           } catch (const tf2::TransformException &ex) {
+  //             // Tf does not exist or is too old, skip for this link
+  //           }
+  //         }
+  //
+  //         // Calculate distances for right wrist to all links
+  //         for (auto robot_link_name :
+  //         panda_interface_names::panda_link_names) {
+  //           try {
+  //             auto tf =
+  //             tf_buffer->lookupTransform(image_constants::right_wrist,
+  //                                                  robot_link_name,
+  //                                                  tf2::TimePointZero);
+  //             if (now - tf.header.stamp <= max_wrist_tfs_age) {
+  //               right_wrist_distances.push_back(geom_utils::distance(tf));
+  //             }
+  //           } catch (const tf2::TransformException &ex) {
+  //             // Tf does not exist or is too old, skip for this link
+  //           }
+  //         }
+  //
+  //         std::optional<double> mean_dist_left;
+  //         std::optional<double> min_dist_left = 100;
+  //         if (!left_wrist_distances.empty()) {
+  //           double sum = 0.0;
+  //           for (double d : left_wrist_distances) {
+  //             if (d < min_dist_left) {
+  //               min_dist_left = d;
+  //             }
+  //             sum += d;
+  //           }
+  //           mean_dist_left = sum / left_wrist_distances.size();
+  //         }
+  //
+  //         std::optional<double> mean_dist_right;
+  //         std::optional<double> min_dist_right = 100;
+  //         if (!right_wrist_distances.empty()) {
+  //           double sum = 0.0;
+  //           for (double d : right_wrist_distances) {
+  //             if (d < min_dist_right) {
+  //               min_dist_right = d;
+  //             }
+  //             sum += d;
+  //           }
+  //           mean_dist_right = sum / right_wrist_distances.size();
+  //         }
+  //
+  //         std::optional<std::string> active_wrist_frame{std::nullopt};
+  //
+  //         if (mean_dist_left.has_value() &&
+  //             (!mean_dist_right.has_value() ||
+  //              mean_dist_left.value() < mean_dist_right.value()) &&
+  //             min_dist_left.value() <= min_distance_from_joint) {
+  //           active_wrist_frame = image_constants::left_wrist;
+  //         } else if (mean_dist_right.has_value() &&
+  //                    min_dist_right.value() <= min_distance_from_joint) {
+  //           active_wrist_frame = image_constants::right_wrist;
+  //         }
+  //
+  //         // We update the contact joint var
+  //         {
+  //           std::shared_lock<std::shared_mutex> mutex(presence_state.mut);
+  //           presence_state.contact_wrist = active_wrist_frame;
+  //         }
+  //       }
+  //     }
+  //     // - Proximity value as bool, depending on distance from working area
+  //     // - Minimum distance between each joint of the robot and the human
+  //     // wrist, if they are in scene
+  //
+  //     last_time = sub_node->now();
+  //     if (print_every_half_sec) {
+  //       last_time_print = sub_node->now();
+  //     }
+  //     std::this_thread::sleep_for(10ms);
+  //   }
+  // }};
 
   {
     RCLCPP_INFO(main_node->get_logger(), "Press enter to start demo");
@@ -780,6 +797,9 @@ int main(int argc, char **argv) {
     threads_run.store(true);
     RCLCPP_INFO(main_node->get_logger(), "Threads running");
   }
+
+  enable_human_presence_request->set__data(true);
+  human_presence_enabler->async_send_request(enable_human_presence_request);
 
   auto start = rclcpp::Time(0, 0, main_node->get_clock()->get_clock_type());
 
@@ -1154,7 +1174,6 @@ int main(int argc, char **argv) {
   executor.cancel();
   threads_run.store(false);
   info_thread.join();
-  calculate_proximity.join();
   safe_keeper_thread.join();
 
   rclcpp::shutdown();

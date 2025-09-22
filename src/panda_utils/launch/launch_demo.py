@@ -56,6 +56,18 @@ def generate_launch_description():
         }.items()
     )
 
+    kinect_ros2 = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('kinect_ros2'),
+                'launch',
+                'stream_kinect.py'
+            ])
+        ]),
+        launch_arguments={
+        }.items()
+    )
+
     return LaunchDescription([
         # Launch arguments
 
@@ -64,4 +76,5 @@ def generate_launch_description():
         utils_launch,
         yolo_recognition,
         image_processing,
+        kinect_ros2,
     ])

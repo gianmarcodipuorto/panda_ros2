@@ -13,6 +13,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(panda_interfaces REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_msgs REQUIRED)
@@ -67,12 +68,6 @@ target_link_libraries(debug_publisher
   franka
 )
 
-add_executable(send_joints_cmd_server ./src/send_joints_pos_cmd.cpp)
-ament_target_dependencies(send_joints_cmd_server rclcpp panda_interfaces std_msgs tf2_eigen)
-
-add_executable(send_joints_cmd_simple_client ./examples/send_joints_pos_cmd_client.cpp)
-ament_target_dependencies(send_joints_cmd_simple_client rclcpp panda_interfaces std_msgs tf2_eigen)
-
 add_executable(send_joints_effort_server ./src/send_joints_effort_cmd.cpp)
 ament_target_dependencies(send_joints_effort_server rclcpp panda_interfaces std_msgs tf2_eigen)
 target_link_libraries(send_joints_effort_server franka)
@@ -92,20 +87,12 @@ ament_target_dependencies(loop_cart_traj rclcpp panda_interfaces std_msgs tf2_ei
 add_executable(stop_traj ./src/exponential_cart_traj.cpp)
 ament_target_dependencies(stop_traj rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools)
 
-add_executable(clik_cmd_pub ./src/clik_cmd_publisher.cpp)
-ament_target_dependencies(clik_cmd_pub rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs rclcpp_lifecycle ament_index_cpp)
-target_link_libraries(clik_cmd_pub robot_model)
-
-add_executable(demo_node ./examples/demo_node.cpp)
-ament_target_dependencies(demo_node rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs)
+add_executable(human_presence ./src/human_presence.cpp ./src/constants.cpp)
+ament_target_dependencies(human_presence rclcpp panda_interfaces std_msgs std_srvs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools image_processing)
 
 add_executable(demo ./examples/demo.cpp ./src/constants.cpp)
-ament_target_dependencies(demo rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs image_processing)
+ament_target_dependencies(demo rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs image_processing std_srvs)
 target_link_libraries(demo robot_model)
-
-add_executable(pinocchio_example ./examples/pinocchio_example.cpp)
-ament_target_dependencies(pinocchio_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp)
-target_link_libraries(pinocchio_example robot_model)
 
 add_executable(inverse_dynamics_controller ./src/inverse_dynamics_controller.cpp)
 ament_target_dependencies(inverse_dynamics_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools)
@@ -126,43 +113,25 @@ add_executable(impedance_controller ./src/impedance_controller.cpp ./src/constan
 ament_target_dependencies(impedance_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools tf2_geometry_msgs)
 target_link_libraries(impedance_controller robot_model franka debug_publisher)
 
-add_executable(publish_franks_tfs ./examples/hand_estimation.cpp)
-ament_target_dependencies(publish_franks_tfs rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs rclcpp_lifecycle tf2_geometry_msgs ament_index_cpp)
-target_link_libraries(publish_franks_tfs franka)
-
-add_executable(estimate_external_forces ./examples/estimate_external_forces.cpp)
-ament_target_dependencies(estimate_external_forces rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs rclcpp_lifecycle tf2_geometry_msgs ament_index_cpp)
-target_link_libraries(estimate_external_forces franka)
-
 add_executable(estimate_hand_external_force ./examples/hand_and_force_estimation.cpp)
 ament_target_dependencies(estimate_hand_external_force rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs rclcpp_lifecycle tf2_geometry_msgs ament_index_cpp)
 target_link_libraries(estimate_hand_external_force franka)
 
-add_executable(joint_traj_test ./examples/joint_trajectory_test.cpp)
-ament_target_dependencies(joint_traj_test rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
-
 install(TARGETS
-  send_joints_cmd_server
-  send_joints_cmd_simple_client
   send_joints_effort_server
   send_joints_effort_simple_client
   joint_traj
   cart_traj
   stop_traj
   loop_cart_traj
-  clik_cmd_pub
-  demo_node
   demo
-  pinocchio_example
   inverse_dynamics_controller
   cart_traj_example
   joint_traj_example
   impedance_controller
-  joint_traj_test
-  publish_franks_tfs
-  estimate_external_forces
   estimate_hand_external_force
   loop_cart_traj_example
+  human_presence
   DESTINATION lib/${PROJECT_NAME}
 )
 

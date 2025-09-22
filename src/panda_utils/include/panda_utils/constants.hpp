@@ -1,6 +1,5 @@
 #pragma once
 
-#include "franka/robot.h"
 #include "robot.hpp"
 #include <rclcpp/qos.hpp>
 #include <string>
@@ -34,6 +33,7 @@ const std::string loop_cart_traj_node_name{"loop_cart_traj_server"};
 /////////////////////////////////////////////////////////////
 const std::string joints_cmd_pos_service_name{"send_joints_pos_cmd"};
 const std::string set_compliance_mode_service_name{"set_compliance_mode"};
+const std::string enable_human_presence_service_name{"enable_human_presence"};
 const std::string set_wrist_contact_service_name{"set_wrist_contact_index"};
 
 /////////////////////////////////////////////////////////////
@@ -55,6 +55,7 @@ const std::string pose_error_topic_name{"/pose_error"};
 
 const std::string demo_state_topic_name{"/state_color"};
 const std::string wrist_contact_index_topic_name{"/panda/wrist_contact_index"};
+const std::string human_presence_topic{"/human_present"};
 
 /////////////////////////////////////////////////////////////
 const std::string panda_traj_move_action_name{"joint_traj_action"};
@@ -132,3 +133,21 @@ const Eigen::Vector<double, 7> acceleration_limits =
     Eigen::Vector<double, 7>{15.0, 7.5, 10.0, 12.5, 15.0, 20.0, 20.0};
 
 } // namespace panda_constants
+
+namespace human_presence {
+struct HumanPresentState {
+  const double MAX_TIME = 3.0;
+  std::shared_mutex mut;
+  bool human_present = false;
+  rclcpp::Duration time_present = rclcpp::Duration::from_seconds(0.0);
+  std::optional<std::string> contact_wrist{std::nullopt};
+
+  void normalize_time() {
+    if (time_present.seconds() > MAX_TIME) {
+      time_present = rclcpp::Duration::from_seconds(MAX_TIME);
+    } else if (time_present.seconds() < 0.0) {
+      time_present = rclcpp::Duration::from_seconds(0.0);
+    }
+  }
+};
+} // namespace human_presence

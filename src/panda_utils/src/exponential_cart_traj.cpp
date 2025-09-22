@@ -2,6 +2,7 @@
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "panda_interfaces/action/stop_traj.hpp"
+#include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_utils/constants.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -10,6 +11,7 @@
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Geometry/AngleAxis.h>
 #include <Eigen/src/Geometry/Quaternion.h>
+#include <boost/math/constants/constants.hpp>
 #include <cmath>
 #include <memory>
 #include <rclcpp/duration.hpp>
@@ -29,79 +31,89 @@ using StopTraj = panda_interfaces::action::StopTraj;
 using GoalHandleStopTraj = rclcpp_action::ServerGoalHandle<StopTraj>;
 using namespace std::chrono_literals;
 
+// struct decay_laws {
+//   double k, t_f, b, c;
+//   double q_i, q_i_dot, q_i_ddot;
+//   double q_f, q_f_dot, q_f_ddot;
+//   decay_laws(double t_f, double q_i, double q_i_dot, double q_i_ddot,
+//              double k = 5)
+//       : k(k), t_f(t_f), q_i(q_i), q_i_dot(q_i_dot), q_i_ddot(q_i_ddot) {
+//     b = -pow(k, 2) * q_i_dot - k * q_i_ddot;
+//     c = q_i_ddot + k * q_i_dot;
+//     q_f_ddot = 0.0;
+//     q_f_dot = 0.0;
+//     q_f = q_i - 2 * (q_i_dot / k) * exp(-k * t_f) +
+//           (q_i_dot / k) * (1 - k * t_f * exp(-k * t_f)) +
+//           (q_i_ddot / pow(k, 2)) -
+//           (q_i_ddot / k) * (1 + k * t_f) * exp(-k * t_f);
+//   }
+//
+//   double exponential_decay_position(double t) {
+//     if (t <= 0.0)
+//       return q_i;
+//     if (t >= t_f)
+//       return q_f;
+//
+//     return q_i + (q_i_dot / k) * (1 - exp(-k * t)) +
+//            (c / pow(k, 2)) * (1 - exp(-k * t_f) * (1 + k * t));
+//   }
+//
+//   double exponential_decay_velocity(double t) {
+//     if (t <= 0.0)
+//       return q_i_dot;
+//     if (t >= t_f)
+//       return q_f_dot;
+//
+//     return exp(-k * t) * (q_i_dot + c * t);
+//   }
+//
+//   double exponential_decay_acceleration(double t) {
+//     if (t <= 0.0)
+//       return q_i_ddot;
+//     if (t >= t_f)
+//       return q_f_ddot;
+//
+//     return (q_i_ddot + b * t) * exp(-k * t);
+//   }
+// };
+
 struct decay_laws {
-  double k, t_f, b, c;
+  double lambda, beta, a, b, t_f;
   double q_i, q_i_dot, q_i_ddot;
-  double q_f, q_f_dot, q_f_ddot;
   decay_laws(double t_f, double q_i, double q_i_dot, double q_i_ddot,
-             double k = 5)
-      : k(k), t_f(t_f), q_i(q_i), q_i_dot(q_i_dot), q_i_ddot(q_i_ddot) {
-    b = -pow(k, 2) * q_i_dot - k * q_i_ddot;
-    c = q_i_ddot + k * q_i_dot;
-    q_f_ddot = 0.0;
-    q_f_dot = 0.0;
-    q_f = q_i - 2 * (q_i_dot / k) * exp(-k * t_f) +
-          (q_i_dot / k) * (1 - k * t_f * exp(-k * t_f)) +
-          (q_i_ddot / pow(k, 2)) -
-          (q_i_ddot / k) * (1 + k * t_f) * exp(-k * t_f);
+             double lambda = 5, double beta = 10)
+      : lambda(lambda), beta(beta), t_f(t_f), q_i(q_i), q_i_dot(q_i_dot),
+        q_i_ddot(q_i_ddot) {
+    b = (q_i_ddot + q_i_dot * lambda) / (lambda - beta);
+    a = q_i_dot - b;
+  }
+  double exponential_decay_velocity(double t) {
+    if (t <= 0.0)
+      return q_i_dot;
+    if (t >= t_f)
+      return 0.0;
+
+    return a * exp(-lambda * t) + b * exp(-beta * t);
+  }
+  double exponential_decay_acceleration(double t) {
+    if (t <= 0.0)
+      return q_i_ddot;
+    if (t >= t_f)
+      return 0.0;
+
+    return -lambda * a * exp(-lambda * t) - beta * b * exp(-beta * t);
   }
 
   double exponential_decay_position(double t) {
     if (t <= 0.0)
       return q_i;
-    if (t >= t_f)
-      return q_f;
+    if (t > t_f)
+      return exponential_decay_position(t_f);
 
-    return q_i + (q_i_dot / k) * (1 - exp(-k * t)) +
-           (c / pow(k, 2)) * (1 - exp(-k * t_f) * (1 + k * t));
-  }
-
-  double exponential_decay_velocity(double t) {
-    if (t <= 0.0)
-      return q_i_dot;
-    if (t >= t_f)
-      return q_f_dot;
-
-    return exp(-k * t) * (q_i_dot + c * t);
-  }
-
-  double exponential_decay_acceleration(double t) {
-    if (t <= 0.0)
-      return q_i_ddot;
-    if (t >= t_f)
-      return q_f_ddot;
-
-    return (q_i_ddot + b * t) * exp(-k * t);
+    return q_i + (a / lambda) * (1 - exp(-lambda * t)) +
+           (b / beta) * (1 - exp(-beta * t));
   }
 };
-
-// struct decay_laws {
-//   double lambda, mu, a, b, t_f;
-//   double q_i_dot, q_i_ddot;
-//   decay_laws(double t_f, double q_i_dot, double q_i_ddot, double lambda = 5,
-//              double mu = 10)
-//       : lambda(lambda), mu(mu), t_f(t_f), q_i_dot(q_i_dot),
-//       q_i_ddot(q_i_ddot) {
-//     b = (-lambda * q_i_dot - q_i_ddot) / (mu - lambda);
-//     a = q_i_dot - b;
-//   }
-//   double exponential_decay_velocity(double t) {
-//     if (t <= 0.0)
-//       return q_i_dot;
-//     if (t >= t_f)
-//       return 0.0;
-//
-//     return a * exp(-lambda * t) + b * exp(-mu * t);
-//   }
-//   double exponential_decay_acceleration(double t) {
-//     if (t <= 0.0)
-//       return q_i_ddot;
-//     if (t >= t_f)
-//       return 0.0;
-//
-//     return -lambda * a * exp(-lambda * t) - mu * b * exp(-mu * t);
-//   }
-// };
 
 class StopTrajectory : public rclcpp::Node {
 
@@ -116,9 +128,9 @@ public:
     auto handle_goal = [this](const rclcpp_action::GoalUUID uuid,
                               std::shared_ptr<const StopTraj::Goal> goal) {
       RCLCPP_INFO(this->get_logger(), "Received goal request");
-      initial_pose = last_pose;
-      initial_velocity = last_twist;
-      initial_acceleration = last_accel;
+      initial_pose = last_cartesian_cmd.pose;
+      initial_velocity = last_cartesian_cmd.twist;
+      initial_acceleration = last_cartesian_cmd.accel;
       (void)uuid;
       RCLCPP_INFO_STREAM(
           this->get_logger(),
@@ -190,25 +202,21 @@ public:
             panda_interface_names::panda_accel_cmd_topic_name,
             panda_interface_names::DEFAULT_TOPIC_QOS()));
 
-    auto last_pose_cb = [this](const geometry_msgs::msg::Pose msg) {
-      last_pose = msg;
-    };
-    auto last_twist_cb = [this](const geometry_msgs::msg::Twist msg) {
-      last_twist = msg;
-    };
-    auto last_accel_cb = [this](const geometry_msgs::msg::Accel msg) {
-      last_accel = msg;
-    };
+    auto last_cmd_cb =
+        [this](const panda_interfaces::msg::CartesianCommand msg) {
+          last_cartesian_cmd = msg;
+        };
 
-    cmd_pose_sub = this->create_subscription<geometry_msgs::msg::Pose>(
-        panda_interface_names::panda_pose_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS(), last_pose_cb);
-    cmd_twist_sub = this->create_subscription<geometry_msgs::msg::Twist>(
-        panda_interface_names::panda_twist_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS(), last_twist_cb);
-    cmd_accel_sub = this->create_subscription<geometry_msgs::msg::Accel>(
-        panda_interface_names::panda_accel_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS(), last_accel_cb);
+    cmd_cartesian_sub =
+        this->create_subscription<panda_interfaces::msg::CartesianCommand>(
+            "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS(),
+            last_cmd_cb);
+
+    cartesian_cmd_pub = std::make_shared<realtime_tools::RealtimePublisher<
+        panda_interfaces::msg::CartesianCommand>>(
+        this->create_publisher<panda_interfaces::msg::CartesianCommand>(
+            "/panda/cartesian_cmd",
+            panda_interface_names::DEFAULT_TOPIC_QOS()));
   }
 
 private:
@@ -218,14 +226,17 @@ private:
       cmd_twist_pub;
   realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Accel>
       cmd_accel_pub;
+  realtime_tools::RealtimePublisherSharedPtr<
+      panda_interfaces::msg::CartesianCommand>
+      cartesian_cmd_pub;
 
-  rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr cmd_pose_sub;
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_twist_sub;
-  rclcpp::Subscription<geometry_msgs::msg::Accel>::SharedPtr cmd_accel_sub;
+  // rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr cmd_pose_sub;
+  // rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_twist_sub;
+  // rclcpp::Subscription<geometry_msgs::msg::Accel>::SharedPtr cmd_accel_sub;
+  rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr
+      cmd_cartesian_sub;
 
-  geometry_msgs::msg::Pose last_pose;
-  geometry_msgs::msg::Twist last_twist;
-  geometry_msgs::msg::Accel last_accel;
+  panda_interfaces::msg::CartesianCommand last_cartesian_cmd;
 
   geometry_msgs::msg::Pose initial_pose;
   geometry_msgs::msg::Twist initial_velocity;
@@ -279,6 +290,7 @@ private:
     geometry_msgs::msg::Pose cmd_pose;
     geometry_msgs::msg::Twist cmd_twist;
     geometry_msgs::msg::Accel cmd_accel;
+    panda_interfaces::msg::CartesianCommand cmd_cartesian;
 
     // Exponential decay laws
     std::map<int, decay_laws> translation_laws;
@@ -384,9 +396,14 @@ private:
 
       RCLCPP_DEBUG_ONCE(this->get_logger(), "Publish command");
 
-      cmd_pose_pub->tryPublish(cmd_pose);
-      cmd_twist_pub->tryPublish(cmd_twist);
-      cmd_accel_pub->tryPublish(cmd_accel);
+      // cmd_pose_pub->tryPublish(cmd_pose);
+      // cmd_twist_pub->tryPublish(cmd_twist);
+      // cmd_accel_pub->tryPublish(cmd_accel);
+      cmd_cartesian.pose = cmd_pose;
+      cmd_cartesian.twist = cmd_twist;
+      cmd_cartesian.accel = cmd_accel;
+
+      cartesian_cmd_pub->try_publish(cmd_cartesian);
 
       // Sleep
       //

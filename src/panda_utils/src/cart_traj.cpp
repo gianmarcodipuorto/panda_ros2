@@ -164,8 +164,8 @@ public:
         panda_interface_names::panda_accel_cmd_topic_name,
         panda_interface_names::DEFAULT_TOPIC_QOS());
 
-    cartesian_cmd_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<panda_interfaces::msg::CartesianCommand>>(
+    cartesian_cmd_pub = std::make_shared<realtime_tools::RealtimePublisher<
+        panda_interfaces::msg::CartesianCommand>>(
         this->create_publisher<panda_interfaces::msg::CartesianCommand>(
             "/panda/cartesian_cmd",
             panda_interface_names::DEFAULT_TOPIC_QOS()));
@@ -217,14 +217,12 @@ private:
     RCLCPP_INFO(this->get_logger(), "Getting goal");
     const auto goal = goal_handle->get_goal();
 
-    // auto node = std::make_shared<rclcpp::Node>("wait_pose");
-    // geometry_msgs::msg::PoseStamped initial_pose;
-    // rclcpp::wait_for_message<geometry_msgs::msg::PoseStamped>(
-    //     initial_pose, node,
-    //     panda_interface_names::panda_pose_state_topic_name, 10s,
-    //     panda_interface_names::CONTROLLER_PUBLISHER_QOS());
+    auto node = std::make_shared<rclcpp::Node>("wait_pose");
     geometry_msgs::msg::PoseStamped initial_pose;
-    initial_pose.pose = goal->initial_pose;
+    rclcpp::wait_for_message<geometry_msgs::msg::PoseStamped>(
+        initial_pose, node, panda_interface_names::panda_pose_state_topic_name,
+        10s, panda_interface_names::CONTROLLER_PUBLISHER_QOS());
+    // initial_pose.pose = goal->initial_pose;
 
     // Initial orientation
     Eigen::Quaterniond initial_quat{
