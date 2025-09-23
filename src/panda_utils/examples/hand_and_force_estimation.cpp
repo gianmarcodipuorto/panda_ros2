@@ -166,11 +166,9 @@ public:
     std::string robot_ip = this->get_parameter("robot_ip").as_string();
 
     RCLCPP_INFO_STREAM(get_logger(), "Connecting to robot at IP: " << robot_ip);
-    double load = 0.553455;
-    std::array F_x_Cload{-0.010328, 0.000068, 0.148159};
-    std::array load_inertia{0.02001,        0.000006527121, -0.0004590,
-                            0.000006527121, 0.01936,        0.000003371038,
-                            -0.0004590,     0.000003371038, 0.002245};
+    double load = 0.0;
+    std::array F_x_Cload{0.0, 0.0, 0.0};
+    std::array load_inertia{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     try {
       if (!panda_franka) {
         panda_franka = std::make_shared<franka::Robot>(robot_ip);

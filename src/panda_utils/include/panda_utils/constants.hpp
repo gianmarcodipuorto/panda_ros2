@@ -136,7 +136,7 @@ const Eigen::Vector<double, 7> acceleration_limits =
 
 namespace human_presence {
 struct HumanPresentState {
-  const double MAX_TIME = 3.0;
+  const double MAX_TIME = 1.0;
   std::shared_mutex mut;
   bool human_present = false;
   rclcpp::Duration time_present = rclcpp::Duration::from_seconds(0.0);

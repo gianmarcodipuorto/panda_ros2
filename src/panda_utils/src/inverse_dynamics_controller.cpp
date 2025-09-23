@@ -135,11 +135,9 @@ public:
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Connected to robot with ip "
                              << this->get_parameter("robot_ip").as_string());
-      double load = 0.553455;
-      std::array F_x_Cload{-0.010328, 0.000068, 0.148159};
-      std::array load_inertia{0.02001,        0.000006527121, -0.0004590,
-                              0.000006527121, 0.01936,        0.000003371038,
-                              -0.0004590,     0.000003371038, 0.002245};
+      double load = 0.0;
+      std::array F_x_Cload{0.0, 0.0, 0.0};
+      std::array load_inertia{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
       panda_franka->setLoad(load, F_x_Cload, load_inertia);
     }
 

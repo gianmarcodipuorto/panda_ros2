@@ -92,11 +92,17 @@ struct debug_data {
   // Pose error (Quaternion as w, x, y, z)
   Eigen::Vector<double, 7> error_pose_vec;
 
-  // External forces contribute in control law
+  // External forces on EE
   std::optional<Eigen::Vector<double, 6>> h_e = Eigen::Vector<double, 6>{};
+  
+  // External forces on EE calculated
+  std::optional<Eigen::Vector<double, 6>> h_e_calculated = Eigen::Vector<double, 6>{};
 
   // Tau external contribute in control law
   std::optional<Eigen::Vector<double, 7>> tau_ext = Eigen::Vector<double, 7>{};
+  
+  // Tau external calculated in control law
+  std::optional<Eigen::Vector<double, 7>> tau_ext_calculated = Eigen::Vector<double, 7>{};
 
   // Filtered joint velocities
   std::optional<Eigen::Vector<double, 7>> filtered_joints_vec =
@@ -138,11 +144,15 @@ private:
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       tau_external_contribute_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      tau_external_calculated_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       filtered_joints_vec_pub{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       coriolis_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       external_forces_contribute_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      external_forces_calculated_debug{};
   Publisher<TwistStamped>::SharedPtr velocity_error_debug{};
   Publisher<PoseStamped>::SharedPtr desired_pose_debug{};
   Publisher<TwistStamped>::SharedPtr desired_velocity_debug{};

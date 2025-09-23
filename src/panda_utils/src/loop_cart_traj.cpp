@@ -139,8 +139,8 @@ public:
     //     this->create_publisher<geometry_msgs::msg::Accel>(
     //         panda_interface_names::panda_accel_cmd_topic_name,
     //         panda_interface_names::DEFAULT_TOPIC_QOS()));
-    cartesian_cmd_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<panda_interfaces::msg::CartesianCommand>>(
+    cartesian_cmd_pub = std::make_shared<realtime_tools::RealtimePublisher<
+        panda_interfaces::msg::CartesianCommand>>(
         this->create_publisher<panda_interfaces::msg::CartesianCommand>(
             "/panda/cartesian_cmd",
             panda_interface_names::DEFAULT_TOPIC_QOS()));
@@ -166,7 +166,7 @@ private:
     RCLCPP_INFO(this->get_logger(), "Executing goal");
     if (realtime_tools::has_realtime_kernel() &&
         !this->get_parameter("use_sim_time").as_bool()) {
-      if (!realtime_tools::configure_sched_fifo(98)) {
+      if (!realtime_tools::configure_sched_fifo(95)) {
         RCLCPP_WARN(this->get_logger(),
                     "Execute thread: Could not set SCHED_FIFO."
                     " Running with default scheduler.");
@@ -214,7 +214,7 @@ private:
                                 std::pow(orient_err.x() - orient_err.x(), 2) +
                                 std::pow(orient_err.x() - orient_err.x(), 2));
 
-    if (pos_error > 1e-3 || pos_orientation > 1e-3) {
+    if (pos_error > 1e-1 || pos_orientation > 1e-3) {
       RCLCPP_ERROR_STREAM(this->get_logger(),
                           "Robot not in first desired position, aborting: "
                               << pos_error << ", " << pos_orientation);
@@ -390,22 +390,6 @@ private:
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<LoopCartTrajectory>();
-
-  if (!realtime_tools::has_realtime_kernel()) {
-    RCLCPP_ERROR(node->get_logger(), "No real time kernel");
-  }
-  if (!node->get_parameter("use_sim_time").as_bool()) {
-
-    if (!realtime_tools::configure_sched_fifo(98)) {
-      RCLCPP_ERROR(node->get_logger(),
-                   "Couldn't configure real time priority for current node");
-    } else {
-      RCLCPP_INFO(node->get_logger(), "Set real time priority");
-    }
-  } else {
-    RCLCPP_INFO(node->get_logger(), "Simulation: realtime not requested");
-  }
-
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;

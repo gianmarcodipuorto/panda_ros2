@@ -148,7 +148,7 @@ def generate_launch_description():
         package='panda_utils',
         executable='loop_cart_traj',
         name='loop_cart_traj_server',
-        prefix = ['taskset -c 5'],
+        # prefix = ['taskset -c 5'],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             # 'loop_rate_freq': loop_rate_freq,
@@ -186,7 +186,7 @@ def generate_launch_description():
         name='impedance_controller',
         # prefix=["gdbserver localhost:3000"],
         # prefix=['taskset -c 10 kitty -e gdb -ex run --args'],
-        prefix=['taskset -c 6'],
+        # prefix=['taskset -c 6'],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'Kp': LaunchConfiguration('controller_kp'),
@@ -246,7 +246,7 @@ def generate_launch_description():
         # external_force_estimator,
 
         # clik_cmd_pub,
-        inverse_dynamics_controller,
+        # inverse_dynamics_controller,
         # publish_tfs_and_estimate_forces
-        joint_traj_server,
+        # joint_traj_server,
     ])

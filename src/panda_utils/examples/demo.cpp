@@ -13,6 +13,7 @@
 #include "panda_utils/constants.hpp"
 #include "panda_utils/utils_func.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/color_rgba.hpp"
 #include "std_msgs/msg/u_int8.hpp"
 #include "std_srvs/srv/set_bool.hpp"
@@ -258,7 +259,7 @@ int main(int argc, char **argv) {
 
   // Stop trajectory goal definition
   panda_interfaces::action::StopTraj_Goal stop_traj_goal;
-  stop_traj_goal.total_time = 1.0;
+  stop_traj_goal.total_time = 1.5;
 
   RCLCPP_INFO(main_node->get_logger(), "Defining Task goal: triangle");
   // Task goal definition: triangle
@@ -268,12 +269,7 @@ int main(int argc, char **argv) {
   panda_interfaces::action::LoopCartTraj_Goal triangle_task_goal =
       generate_triangle_task(home_pose.position.x, home_pose.position.y,
                              home_pose.position.z, 0.1, 0.1,
-                             triangle_orient.normalized(), 4.5);
-  triangle_task_goal.desired_poses[1].orientation.w = 0.9238795;
-  triangle_task_goal.desired_poses[1].orientation.y = 0.3826834;
-
-  triangle_task_goal.desired_poses[1].orientation.w = 0.9238795;
-  triangle_task_goal.desired_poses[1].orientation.y = -0.3826834;
+                             triangle_orient.normalized(), 15.0);
 
   // Topic to read for scene infos
 
@@ -294,6 +290,14 @@ int main(int argc, char **argv) {
       sub_node->create_subscription<PoseStamped>(
           panda_interface_names::panda_pose_state_topic_name,
           panda_interface_names::CONTROLLER_PUBLISHER_QOS(), pose_state_cb);
+
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr human_present_sub =
+      sub_node->create_subscription<std_msgs::msg::Bool>(
+          panda_interface_names::human_presence_topic,
+          panda_interface_names::DEFAULT_TOPIC_QOS(),
+          [&presence_state](const std_msgs::msg::Bool present) {
+            presence_state.human_present = present.data;
+          });
 
   tf_buffer = std::make_unique<tf2_ros::Buffer>(sub_node->get_clock());
 
@@ -457,29 +461,6 @@ int main(int argc, char **argv) {
           stop_traj_handle = std::nullopt;
         };
     stop_traj_options.result_callback = stop_result_callback;
-
-    // auto cart_goal_response_callback =
-    //     [&cartesian_traj_handle](
-    //         rclcpp_action::ClientGoalHandle<CartTraj>::SharedPtr goal_handle)
-    //         {
-    //       cartesian_traj_handle = goal_handle;
-    //     };
-    // cart_traj_options.goal_response_callback = cart_goal_response_callback;
-
-    // auto loop_cart_goal_response_callback =
-    //     [&loop_cartesian_traj_handle](
-    //         rclcpp_action::ClientGoalHandle<LoopCartTraj>::SharedPtr
-    //             goal_handle) { loop_cartesian_traj_handle = goal_handle; };
-    // loop_cart_traj_options.goal_response_callback =
-    //     loop_cart_goal_response_callback;
-
-    // auto stop_goal_response_callback =
-    //     [&stop_traj_handle](
-    //         rclcpp_action::ClientGoalHandle<StopTraj>::SharedPtr goal_handle)
-    //         {
-    //       stop_traj_handle = goal_handle;
-    //     };
-    // stop_traj_options.goal_response_callback = stop_goal_response_callback;
   }
 
   RCLCPP_INFO(main_node->get_logger(), "Waiting for servers...");
@@ -933,77 +914,6 @@ int main(int argc, char **argv) {
         };
       }
 
-      if ((main_node->now() - start).seconds() > 2.0) {
-        RCLCPP_INFO(main_node->get_logger(), "In task state");
-        ////////////////////////////////////////////////////////////////////////////
-        // Start modification
-        cancel_actions();
-        RCLCPP_INFO(main_node->get_logger(),
-                    "Sending velocity and acceleration to 0 exponentially");
-        auto future = stop_traj_action_client->async_send_goal(
-            stop_traj_goal, stop_traj_options);
-        auto fut_return =
-            rclcpp::spin_until_future_complete(confirmation_node, future, 3s);
-        switch (fut_return) {
-        case rclcpp::FutureReturnCode::SUCCESS: {
-          auto handle = future.get();
-          if (handle) {
-            stop_traj_handle = handle;
-            RCLCPP_INFO(main_node->get_logger(), "Stop trajectory accepted");
-          } else {
-            RCLCPP_INFO(main_node->get_logger(), "Stop trajectory refused");
-            break;
-          }
-          break;
-        }
-        case rclcpp::FutureReturnCode::INTERRUPTED: {
-          RCLCPP_ERROR(main_node->get_logger(), "Stop trajectory interrupted");
-          break;
-        }
-        case rclcpp::FutureReturnCode::TIMEOUT: {
-          RCLCPP_ERROR(main_node->get_logger(), "Stop trajectory went timeout");
-          break;
-        } break;
-        };
-
-        while (stop_traj_handle.has_value()) {
-          RCLCPP_INFO(main_node->get_logger(),
-                      "Waiting robot to reach 0 velocity and acceleration");
-          if (!rclcpp::ok()) {
-            break;
-          }
-          rclcpp::sleep_for(2s);
-        }
-
-        compliance_request.cmd = true;
-        auto compliance_future = compliance_mode_client->async_send_request(
-            std::make_shared<panda_interfaces::srv::SetComplianceMode_Request>(
-                compliance_request));
-        bool stopped = false;
-        while (!stopped) {
-
-          auto res = compliance_future.wait_for(10ms);
-          while (res != std::future_status::ready && rclcpp::ok()) {
-            res = compliance_future.wait_for(10ms);
-            RCLCPP_INFO(main_node->get_logger(),
-                        "Robot entering compliance mode");
-          }
-          if (res == std::future_status::ready) {
-            RCLCPP_INFO(main_node->get_logger(),
-                        "Robot stopped and passed in compliance mode");
-            stopped = true;
-            state = SceneState::compliance;
-          }
-        }
-        ////////////////////////////////////////////////////////////////////////////
-        // End modification
-        ////////////////////////////////////////////////////////////////////////////
-        if (loop_cartesian_traj_handle.has_value()) {
-          RCLCPP_INFO(main_node->get_logger(),
-                      "Still executing loop trajectory");
-        }
-        start = main_node->now();
-      }
       break;
       // Read the human_state and handle the task accordingly; when human
       // enter
@@ -1171,6 +1081,42 @@ int main(int argc, char **argv) {
   RCLCPP_INFO(main_node->get_logger(), "Requested shutdown");
 
   cancel_actions();
+  RCLCPP_INFO(main_node->get_logger(),
+              "Sending velocity and acceleration to 0 exponentially");
+  auto future = stop_traj_action_client->async_send_goal(stop_traj_goal,
+                                                         stop_traj_options);
+  auto fut_return =
+      rclcpp::spin_until_future_complete(confirmation_node, future, 3s);
+  switch (fut_return) {
+  case rclcpp::FutureReturnCode::SUCCESS: {
+    auto handle = future.get();
+    if (handle) {
+      stop_traj_handle = handle;
+      RCLCPP_INFO(main_node->get_logger(), "Stop trajectory accepted");
+    } else {
+      RCLCPP_INFO(main_node->get_logger(), "Stop trajectory refused");
+      break;
+    }
+    break;
+  }
+  case rclcpp::FutureReturnCode::INTERRUPTED: {
+    RCLCPP_ERROR(main_node->get_logger(), "Stop trajectory interrupted");
+    break;
+  }
+  case rclcpp::FutureReturnCode::TIMEOUT: {
+    RCLCPP_ERROR(main_node->get_logger(), "Stop trajectory went timeout");
+    break;
+  } break;
+  };
+
+  while (stop_traj_handle.has_value()) {
+    RCLCPP_INFO(main_node->get_logger(),
+                "Waiting robot to reach 0 velocity and acceleration");
+    if (!rclcpp::ok()) {
+      break;
+    }
+    rclcpp::sleep_for(2s);
+  }
   executor.cancel();
   threads_run.store(false);
   info_thread.join();

@@ -122,7 +122,6 @@ void publish_state(
   pub->publish(color);
 }
 
-
 void fill_pose_orientation(geometry_msgs::msg::Pose &pose,
                            const Eigen::Quaterniond &orientation) {
 
@@ -229,8 +228,7 @@ int main(int argc, char **argv) {
   auto future_goal_handle =
       loop_traj_action_client->async_send_goal(triangle_task_goal);
   if (rclcpp::spin_until_future_complete(main_node, future_goal_handle) !=
-          rclcpp::FutureReturnCode::SUCCESS &&
-      rclcpp::ok()) {
+      rclcpp::FutureReturnCode::SUCCESS) {
     if (!rclcpp::ok()) {
       loop_traj_action_client->async_cancel_goal(future_goal_handle.get());
       rclcpp::shutdown();
@@ -241,8 +239,7 @@ int main(int argc, char **argv) {
   auto future_result =
       loop_traj_action_client->async_get_result(future_goal_handle.get());
   if (rclcpp::spin_until_future_complete(main_node, future_result) !=
-          rclcpp::FutureReturnCode::SUCCESS &&
-      rclcpp::ok()) {
+      rclcpp::FutureReturnCode::SUCCESS) {
     if (!rclcpp::ok()) {
       loop_traj_action_client->async_cancel_goal(future_goal_handle.get());
       rclcpp::shutdown();
@@ -253,8 +250,7 @@ int main(int argc, char **argv) {
 
   // check dello stato dell'azione, se non ho errori lo stato deve essere
   // SUCCEEDED
-  if (future_result.get().code != rclcpp_action::ResultCode::SUCCEEDED &&
-      rclcpp::ok()) {
+  if (future_result.get().code != rclcpp_action::ResultCode::SUCCEEDED) {
     if (!rclcpp::ok()) {
       loop_traj_action_client->async_cancel_goal(future_goal_handle.get());
       rclcpp::shutdown();

@@ -494,6 +494,7 @@ public:
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
 
+    using namespace std::chrono_literals;
     debug_pub.create_pubs(shared_from_this(),
                           panda_interface_names::CONTROLLER_PUBLISHER_QOS());
 
@@ -533,13 +534,23 @@ public:
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Connected to robot with ip "
                              << this->get_parameter("robot_ip").as_string());
-      // double load = 0.553455;
-      // std::array F_x_Cload{-0.010328, 0.000068, 0.148159};
-      // std::array load_inertia{0.02001,        0.000006527121, -0.0004590,
-      //                         0.000006527121, 0.01936,        0.000003371038,
-      //                         -0.0004590,     0.000003371038, 0.002245};
+      std::array<double, 7> temp{100.0, 100.0, 100.0, 100.0,
+                                 100.0, 100.0, 100.0};
+      std::array<double, 6> temp2{100.0, 100.0, 100.0, 100.0, 100.0, 100.0};
+      panda_franka->setCollisionBehavior(temp, temp, temp, temp, temp2, temp2,
+                                         temp2, temp2);
+      RCLCPP_INFO_STREAM(this->get_logger(), "Set collision behaviour");
+      double load = 0.0;
+      std::array F_x_Cload{0.0, 0.0, 0.0};
+      std::array load_inertia{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      panda_franka->setLoad(load, F_x_Cload, load_inertia);
+      auto state = panda_franka->readOnce();
+      RCLCPP_INFO_STREAM(this->get_logger(),
+                         "Load: " << state.m_load << " Load EE: " << state.m_ee
+                                  << "\n F_x_Cload: " << state.F_x_Cload[0]
+                                  << ", " << state.F_x_Cload[1] << ", "
+                                  << state.F_x_Cload[2]);
 
-      // panda_franka->setLoad(load, F_x_Cload, load_inertia);
       // RCLCPP_INFO_STREAM(this->get_logger(), "Set load on real robot");
 
       panda_franka_model = panda_franka.value().loadModel();
@@ -566,11 +577,6 @@ public:
       double k_max = this->get_parameter("k_max").as_double();
       double eps = this->get_parameter("eps").as_double();
 
-      Eigen::Affine3d ident = Eigen::Affine3d::Identity();
-      Eigen::Matrix4d matrix_ident = ident.matrix();
-      std::array<double, 16> ident_transform;
-      Eigen::Map<Eigen::Matrix4d>(ident_transform.data()) = matrix_ident;
-
       // Get jacobian function
       auto get_jacob =
           [this](const Eigen::Vector<double, 7> &current_joint_pos) {
@@ -589,10 +595,9 @@ public:
       joint_state_to_pub.name = std::vector<std::string>{
           "joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"};
 
-      robot_control_callback =
-          [this, KP, KD, MD, MD_1, k_max, eps, ident_transform,
-           get_jacob](const franka::RobotState &state,
-                      franka::Duration dt) -> franka::Torques {
+      robot_control_callback = [this, KP, KD, MD, MD_1, k_max, eps, get_jacob](
+                                   const franka::RobotState &state,
+                                   franka::Duration dt) -> franka::Torques {
         if (!(start_flag.load() && rclcpp::ok())) {
           // Send last commanded joint effort command
           return franka::MotionFinished(franka::Torques(state.tau_J_d));
@@ -615,7 +620,7 @@ public:
         if (dt.toSec() != 0.0) {
           for (int i = 0; i < 7; i++) {
             current_joints_speed[i] = franka::lowpassFilter(
-                dt.toSec(), state.dq[i], current_joints_speed[i], 15.0);
+                dt.toSec(), state.dq[i], current_joints_speed[i], 100.0);
           }
 
         } else {
@@ -634,7 +639,6 @@ public:
         // frame
         if (compliance_mode.load() && EE_to_K_transform.has_value()) {
           // I have to get Kstiffness frame pose if also EE_to_K has value
-          panda_franka->setK(ident_transform);
           current_pose = get_pose(
               panda_franka_model->pose(franka::Frame::kStiffness, state));
           jacobian = get_jacobian(panda_franka_model->zeroJacobian(
@@ -708,7 +712,7 @@ public:
           initial_h_e = h_e_measured;
         }
         extern_tau = tau_ext_measured - initial_extern_tau;
-        h_e = h_e_measured;
+        h_e = h_e_measured - initial_h_e;
 
         // Calculate quantities for control
         // Calculated through libfranka lib for better accuracy
@@ -721,6 +725,7 @@ public:
         //
 
         Eigen::Vector<double, 7> y;
+        Eigen::Vector<double, 6> y_cartesian;
         Eigen::Vector<double, 6> current_twist;
         Eigen::Vector<double, 6> error_twist;
         {
@@ -740,29 +745,28 @@ public:
             y = jacobian_pinv * MD_1 *
                 (
 
-                    -KD * current_twist
+                    -KD * current_twist -
+                    MD *
+                        get_j_dot(get_jacob, current_joints_config_vec,
+                                  current_joints_speed) *
+                        current_joints_speed
                     // -
-                    //   MD *
-                    //       get_j_dot(get_jacob, current_joints_config_vec,
-                    //                 current_joints_speed) *
-                    //       current_joints_speed
-                    // + h_e
+                    //   compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3)
+                    //   *
+                    //       tau_ext_measured
 
                 );
           } else {
-            y = jacobian_pinv * MD_1 *
-                (
-
-                    MD * desired_accel_vec + KD * error_twist +
-                    KP * error_pose_vec
-                    // -
-                    //   MD *
-                    //       get_j_dot(get_jacob, current_joints_config_vec,
-                    //                 current_joints_speed) *
-                    //       current_joints_speed
-                    // + h_e
-
-                );
+            y_cartesian =
+                (MD * desired_accel_vec + KD * error_twist +
+                 KP * error_pose_vec -
+                 MD *
+                     get_j_dot(get_jacob, current_joints_config_vec,
+                               current_joints_speed) *
+                     current_joints_speed -
+                 compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3) *
+                     tau_ext_measured);
+            y = jacobian_pinv * MD_1 * y_cartesian;
           }
         }
 
@@ -799,12 +803,12 @@ public:
                 panda_franka->stop();
                 start_flag.store(false);
                 return franka::MotionFinished(franka::Torques(state.tau_J_d));
-              } else if (abs(state.dq[i]) >= 0.5) {
+              } else if (abs(state.dq[i]) >= 0.7) {
                 RCLCPP_INFO_STREAM_ONCE(
                     this->get_logger(),
                     "Running safety check: joint limit speed");
                 RCLCPP_ERROR_STREAM(this->get_logger(),
-                                    "Joint velocity over the safety value 0.5");
+                                    "Joint velocity over the safety value 0.7");
                 panda_franka->stop();
                 start_flag.store(false);
                 return franka::MotionFinished(franka::Torques(state.tau_J_d));
@@ -866,7 +870,11 @@ public:
 
           try {
             debug_pub.data().h_e = h_e;
-            debug_pub.data().tau_ext = extern_tau;
+            debug_pub.data().h_e_calculated =
+                compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3) *
+                tau_ext_measured;
+            debug_pub.data().tau_ext = tau_ext_measured;
+            debug_pub.data().tau_ext_calculated = jacobian.transpose() * h_e;
             // debug_pub.data().lambda = lambda;
             // debug_pub.data().sigma_min = sigma_min;
             debug_pub.data().current_twist = current_twist;
@@ -883,6 +891,7 @@ public:
             debug_pub.data().tau_d_calculated = tau;
             debug_pub.data().tau_d_last = state.tau_J_d;
             debug_pub.data().y = y;
+            debug_pub.data().y_cartesian = y_cartesian;
 
             // Robot state
             debug_pub.data().robot_state->q = state.q;
@@ -924,12 +933,10 @@ public:
           this->get_logger(),
           "Configuring robot with simulation and franka library");
       panda_franka = franka::Robot(this->get_parameter("robot_ip").as_string());
-      double load = 0.553455;
-      std::array F_x_Cload{-0.010328, 0.000068, 0.148159};
-      std::array load_inertia{0.02001,        0.000006527121, -0.0004590,
-                              0.000006527121, 0.01936,        0.000003371038,
-                              -0.0004590,     0.000003371038, 0.002245};
-      // panda_franka->setLoad(load, F_x_Cload, load_inertia);
+      double load = 0.0;
+      std::array F_x_Cload{0.0, 0.0, 0.0};
+      std::array load_inertia{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      panda_franka->setLoad(load, F_x_Cload, load_inertia);
       // RCLCPP_INFO_STREAM(this->get_logger(), "Set load on real robot");
       panda_franka_model = panda_franka->loadModel();
       RCLCPP_INFO_STREAM(this->get_logger(),
@@ -966,6 +973,8 @@ public:
       // Initializing control setpoint variables
       init_cartesian_cmd();
 
+      update_cartesian_cmd();
+
       // Configuring initial external tau bias
       Eigen::Map<const Eigen::Vector<double, 7>> initial_tau{
           panda_franka->readOnce().tau_ext_hat_filtered.data()};
@@ -983,9 +992,10 @@ public:
           panda_franka->readOnce().O_F_ext_hat_K.data()};
 
       RCLCPP_INFO_STREAM(this->get_logger(),
-                         "Initial h_e: " << h_e[0] << ", " << h_e[1] << ", "
-                                         << h_e[2] << ", " << h_e[3] << ", "
-                                         << h_e[4] << ", " << h_e[5]);
+                         "Initial h_e: "
+                             << initial_h_e[0] << ", " << initial_h_e[1] << ", "
+                             << initial_h_e[2] << ", " << initial_h_e[3] << ", "
+                             << initial_h_e[4] << ", " << initial_h_e[5]);
 
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Desired pose is: ["
@@ -1078,19 +1088,7 @@ public:
           // }}.detach();
 
           // TFs publisher thread according to fr3 link names
-          std::thread{[this]() {
-            if (realtime_tools::configure_sched_fifo(90)) {
-              RCLCPP_INFO(this->get_logger(),
-                          "Set real time priority for publisher thread");
-            } else {
-              RCLCPP_ERROR(this->get_logger(),
-                           "Real time priority not set for publisher thread,"
-                           "shutting down");
-              start_flag.store(false);
-              rclcpp::shutdown();
-            }
-            // tf_publish_loop();
-          }}.detach();
+          std::thread{[this]() { tf_publish_loop(); }}.detach();
 
           // Debug publisher thread
           std::thread{[this]() {
@@ -1589,6 +1587,15 @@ private:
     return jacobian.transpose() *
            (jacobian * jacobian.transpose() +
             lambda * lambda * Eigen::Matrix<double, 6, 6>::Identity())
+               .inverse();
+  }
+
+  Eigen::Matrix<double, 6, 7>
+  compute_jacob_pseudoinv_h_e(const Eigen::Matrix<double, 7, 6> &jacobian,
+                              const double &lambda) {
+    return jacobian.transpose() *
+           (jacobian * jacobian.transpose() +
+            lambda * lambda * Eigen::Matrix<double, 7, 7>::Identity())
                .inverse();
   }
 
@@ -2132,7 +2139,6 @@ void ImpedanceController::control_libfranka_sim() {
       jacobian = get_jacobian(
           panda_franka_model->zeroJacobian(franka::Frame::kStiffness, state));
     } else {
-      // panda_franka->setK(ident_transform);
       current_pose =
           get_pose(panda_franka_model->pose(franka::Frame::kFlange, state));
       RCLCPP_INFO_STREAM_ONCE(
