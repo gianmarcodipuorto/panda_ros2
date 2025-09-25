@@ -49,6 +49,8 @@ const std::vector<std::string> coco_keypoints = {
     "right_elbow", "left_wrist",    "right_wrist",    "left_hip",
     "right_hip",   "left_knee",     "right_knee",     "left_ankle",
     "right_ankle"};
+const int LEFT_WRIST_IDX = 9;
+const int RIGHT_WRIST_IDX = 10;
 const std::string left_wrist{"left_wrist"};
 const std::string right_wrist{"right_wrist"};
 const std::string skeleton_center{"belly"};

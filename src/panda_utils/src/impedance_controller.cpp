@@ -14,6 +14,7 @@
 #include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_interfaces/msg/double_array_stamped.hpp"
 #include "panda_interfaces/msg/double_stamped.hpp"
+#include "panda_interfaces/msg/human_contact.hpp"
 #include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
 #include "panda_interfaces/msg/joints_command.hpp"
 #include "panda_interfaces/msg/joints_effort.hpp"
@@ -121,6 +122,34 @@ struct robot_state {
   rclcpp::Time state_time;
   std::mutex mut;
 };
+
+double normalize_angle_diff(double diff) {
+  // Ensure the difference is within (-2*PI, 2*PI)
+  diff = std::fmod(diff, 2 * M_PI);
+  // Adjust to [-PI, PI]
+  if (diff > M_PI) {
+    diff -= 2 * M_PI;
+  } else if (diff < -M_PI) {
+    diff += 2 * M_PI;
+  }
+  return diff;
+}
+
+Eigen::Matrix<double, 3, 3> eul2jac_matrix(double z, double y, double) {
+  Eigen::Matrix<double, 3, 3> mat;
+  mat << 0.0, -sin(z), cos(z) * sin(y), 0.0, cos(z), sin(z) * sin(y), 1.0, 0.0,
+      cos(y);
+  return mat;
+}
+
+Eigen::Matrix<double, 6, 6> jacob_transform_matrix(double z, double y,
+                                                   double z_1) {
+  Eigen::Matrix<double, 3, 3> T = eul2jac_matrix(z, y, z_1);
+  Eigen::Matrix<double, 6, 6> T_A = Eigen::Matrix<double, 6, 6>::Zero();
+  T_A.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
+  T_A.block<3, 3>(3, 3) = T;
+  return T_A;
+}
 
 /// The quaternion represents a rotation
 Eigen::Matrix<double, 3, 3> s_operator(const Eigen::Quaterniond &quat) {
@@ -401,6 +430,11 @@ public:
       }
     };
 
+    auto set_human_contact_info_cb =
+        [this](const panda_interfaces::msg::HumanContact msg) {
+          human_contact_info = msg;
+        };
+
     cartesian_cmd_sub =
         this->create_subscription<panda_interfaces::msg::CartesianCommand>(
             "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS(),
@@ -410,6 +444,12 @@ public:
         panda_interface_names::torque_sensor_topic_name,
         panda_interface_names::CONTROLLER_SUBSCRIBER_QOS(),
         set_external_tau_cb);
+
+    human_contact_sub =
+        this->create_subscription<panda_interfaces::msg::HumanContact>(
+            panda_interface_names::human_contact_topic,
+            panda_interface_names::DEFAULT_TOPIC_QOS(),
+            set_human_contact_info_cb);
 
     robot_joint_efforts_pub = this->create_publisher<JointsEffort>(
         panda_interface_names::panda_effort_cmd_topic_name,
@@ -424,6 +464,12 @@ public:
                panda_interfaces::srv::SetComplianceMode_Response::SharedPtr
                    response) {
           if (request->cmd) {
+            if (current_joints_speed.norm() >= 1e-2) {
+              response->result = false;
+              RCLCPP_ERROR(this->get_logger(),
+                           "Speed to high: can't set compliance mode");
+              return;
+            }
             compliance_mode.store(true);
             response->result = true;
             RCLCPP_INFO(this->get_logger(),
@@ -439,34 +485,6 @@ public:
         this->create_service<panda_interfaces::srv::SetComplianceMode>(
             panda_interface_names::set_compliance_mode_service_name,
             compliance_mode_cb);
-
-    auto wrist_contact_cb =
-        [this](
-            const panda_interfaces::srv::WristContact_Request::SharedPtr
-                request,
-            panda_interfaces::srv::WristContact_Response::SharedPtr response) {
-          std_msgs::msg::String wrist;
-
-          if (!request->contact) {
-            wrist_contact_frame = std::nullopt;
-            wrist.data = "";
-            wrist_contact_index_pub->publish(wrist);
-            RCLCPP_INFO_STREAM(this->get_logger(), "Currently unset contact");
-          } else {
-            wrist = request->wrist;
-            wrist_contact_frame = std::string(request->wrist.data);
-            wrist_contact_index_pub->publish(wrist);
-            RCLCPP_INFO_STREAM(this->get_logger(),
-                               "Currently set wrist in touch to "
-                                   << wrist.data);
-          }
-          response->set__success(true);
-        };
-
-    wrist_contact_server =
-        this->create_service<panda_interfaces::srv::WristContact>(
-            panda_interface_names::set_wrist_contact_service_name,
-            wrist_contact_cb);
 
     wrist_contact_index_pub = this->create_publisher<std_msgs::msg::String>(
         panda_interface_names::wrist_contact_index_topic_name,
@@ -660,6 +678,14 @@ public:
         current_quat.normalize();
         current_quat = quaternionContinuity(current_quat, old_quaternion);
         old_quaternion = current_quat;
+        auto current_euler_zyz =
+            current_quat.toRotationMatrix().eulerAngles(2, 1, 2);
+        Eigen::Matrix<double, 3, 3> T = eul2jac_matrix(
+            current_euler_zyz(0), current_euler_zyz(1), current_euler_zyz(2));
+        Eigen::Matrix<double, 6, 6> T_A = jacob_transform_matrix(
+            current_euler_zyz(0), current_euler_zyz(1), current_euler_zyz(2));
+        Eigen::Matrix<double, 6, 6> T_A_1 = T_A.inverse();
+        Eigen::Matrix<double, 6, 7> analytical_jacobian = T_A_1 * jacobian;
 
         // Calculate pose error
         {
@@ -668,17 +694,25 @@ public:
           desired_quat.x() = desired_pose.orientation.x;
           desired_quat.y() = desired_pose.orientation.y;
           desired_quat.z() = desired_pose.orientation.z;
-
           desired_quat.normalize();
+          auto zyz_desired_angles =
+              desired_quat.toRotationMatrix().eulerAngles(2, 1, 2);
+
           error_quat = desired_quat * current_quat.inverse();
           error_quat.normalize();
 
           error_pose_vec(0) = desired_pose.position.x - current_pose.position.x;
           error_pose_vec(1) = desired_pose.position.y - current_pose.position.y;
           error_pose_vec(2) = desired_pose.position.z - current_pose.position.z;
-          error_pose_vec(3) = error_quat.x();
-          error_pose_vec(4) = error_quat.y();
-          error_pose_vec(5) = error_quat.z();
+          // error_pose_vec(3) = error_quat.x();
+          // error_pose_vec(4) = error_quat.y();
+          // error_pose_vec(5) = error_quat.z();
+          error_pose_vec(3) = normalize_angle_diff(zyz_desired_angles(0) -
+                                                   current_euler_zyz(0));
+          error_pose_vec(4) = normalize_angle_diff(zyz_desired_angles(1) -
+                                                   current_euler_zyz(1));
+          error_pose_vec(5) = normalize_angle_diff(zyz_desired_angles(2) -
+                                                   current_euler_zyz(2));
         }
 
         // B(q)
@@ -690,15 +724,19 @@ public:
             this->panda_franka_model.value().coriolis(state).data());
 
         // Calculate jacobian SVD
+        // Eigen::JacobiSVD<Eigen::MatrixXd> svd(
+        //     jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
         Eigen::JacobiSVD<Eigen::MatrixXd> svd(
-            jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
+            analytical_jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
         double sigma_min = svd.singularValues().tail(1)(0);
 
         // DYNAMIC LAMBDA BASED ON MINIMUM SINGULAR VALUE
         double lambda = k_max * (1.0 - pow(sigma_min, 2) / pow(eps, 2));
         lambda = (sigma_min >= eps ? 0.0 : lambda);
+        // Eigen::Matrix<double, 7, 6> jacobian_pinv =
+        //     compute_jacob_pseudoinv(jacobian, lambda);
         Eigen::Matrix<double, 7, 6> jacobian_pinv =
-            compute_jacob_pseudoinv(jacobian, lambda);
+            compute_jacob_pseudoinv(analytical_jacobian, lambda);
 
         // Getting external tau
         Eigen::Map<const Eigen::Vector<double, 7>> tau_ext_measured(
@@ -729,45 +767,43 @@ public:
         Eigen::Vector<double, 6> current_twist;
         Eigen::Vector<double, 6> error_twist;
         {
-          // std::lock_guard<std::mutex> lock(desired_twist_mutex);
-          // RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(),
-          //                             1000.0, "Accessing desired twist");
-          current_twist = jacobian * current_joints_speed;
-          error_twist = desired_twist_vec - current_twist;
+          // current_twist = jacobian * current_joints_speed;
+          // error_twist = desired_twist_vec - current_twist;
+
+          current_twist = analytical_jacobian * current_joints_speed;
+          error_twist = T_A_1 * desired_twist_vec - current_twist;
         }
 
         {
-          // std::lock_guard<std::mutex> lock(desired_accel_mutex);
-          // RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(),
-          //                             1000.0, "Accessing desired accel");
+          // clang-format off
           if (compliance_mode.load()) {
 
             y = jacobian_pinv * MD_1 *
                 (
-
-                    -KD * current_twist -
-                    MD *
-                        get_j_dot(get_jacob, current_joints_config_vec,
-                                  current_joints_speed) *
-                        current_joints_speed
-                    // -
-                    //   compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3)
-                    //   *
-                    //       tau_ext_measured
-
+                  -KD * current_twist 
+                  -T_A.transpose() * jacobian_pinv.transpose() * tau_ext_measured
+                  // - jacobian_pinv.transpose() * extern_tau
+                  - MD *
+                   get_j_dot(get_jacob, current_joints_config_vec,
+                             current_joints_speed) *
+                   current_joints_speed
                 );
           } else {
             y_cartesian =
-                (MD * desired_accel_vec + KD * error_twist +
-                 KP * error_pose_vec -
-                 MD *
-                     get_j_dot(get_jacob, current_joints_config_vec,
-                               current_joints_speed) *
-                     current_joints_speed -
-                 compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3) *
-                     tau_ext_measured);
+                (
+                  MD * T_A_1 * desired_accel_vec +
+                  // MD * desired_accel_vec +
+                  KD * error_twist + KP * error_pose_vec -
+                  MD *
+                      get_j_dot(get_jacob, current_joints_config_vec,
+                                current_joints_speed) *
+                      current_joints_speed
+                  // - compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3) * tau_ext_measured
+                  - T_A.transpose() * jacobian_pinv.transpose() * tau_ext_measured
+                );
             y = jacobian_pinv * MD_1 * y_cartesian;
           }
+      // clang-format: on
         }
 
         for (int i = 0; i < y.size(); i++) {
@@ -1320,6 +1356,8 @@ private:
   rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr
       cartesian_cmd_sub{};
   rclcpp::Subscription<JointTorqueMeasureStamped>::SharedPtr external_tau_sub{};
+  rclcpp::Subscription<panda_interfaces::msg::HumanContact>::SharedPtr human_contact_sub{};
+
 
   // Commands publisher
   Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub{};
@@ -1335,14 +1373,12 @@ private:
   rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr
       compliance_mode_server;
 
-  rclcpp::Service<panda_interfaces::srv::WristContact>::SharedPtr
-      wrist_contact_server;
-
   // Robot related variables
   panda::RobotModel panda;
   std::optional<franka::Robot> panda_franka;
   std::optional<franka::Model> panda_franka_model;
   robot_state panda_franka_state;
+  panda_interfaces::msg::HumanContact human_contact_info{};
   std::optional<std::string> wrist_contact_frame{std::nullopt};
   std::optional<std::array<double, 16>> EE_to_K_transform{std::nullopt};
   Eigen::Quaterniond old_quaternion;
@@ -1779,7 +1815,7 @@ void ImpedanceController::control() {
   Eigen::Vector<double, 6> MD_{Md, Md, Md, Md, Md, Md};
   Eigen::Matrix<double, 6, 6> MD = Eigen::Matrix<double, 6, 6>::Identity();
   MD.diagonal() = MD_;
-  auto MD_1 = MD.inverse();
+  Eigen::Matrix<double, 6, 6> MD_1 = MD.inverse();
 
   while (start_flag.load() && rclcpp::ok()) {
 
@@ -1802,11 +1838,17 @@ void ImpedanceController::control() {
       for (size_t i = 0; i < current_joint_config->position.size(); i++) {
         current_joints_speed[i] =
             franka::lowpassFilter(0.001, current_joint_config->velocity[i],
-                                  current_joints_speed[i], 20.0);
+                                  current_joints_speed[i], 100.0);
       }
     }
 
     panda.computeAll(current_joints_config_vec, current_joints_speed);
+
+    if (compliance_mode.load() && wrist_contact_frame.has_value()) {
+      jacobian = panda.getGeometricalJacobian("fr3_joint4");
+    } else {
+      jacobian = panda.getGeometricalJacobian(frame_id_name);
+    }
 
     // Get current pose
     Pose current_pose_tmp = panda.getPose(frame_id_name);
@@ -1818,6 +1860,14 @@ void ImpedanceController::control() {
     current_quat.normalize();
     current_quat = quaternionContinuity(current_quat, old_quaternion);
     old_quaternion = current_quat;
+    auto current_euler_zyz =
+        current_quat.toRotationMatrix().eulerAngles(2, 1, 2);
+    Eigen::Matrix<double, 3, 3> T = eul2jac_matrix(
+        current_euler_zyz(0), current_euler_zyz(1), current_euler_zyz(2));
+    Eigen::Matrix<double, 6, 6> T_A = jacob_transform_matrix(
+        current_euler_zyz(0), current_euler_zyz(1), current_euler_zyz(2));
+    Eigen::Matrix<double, 6, 6> T_A_1 = T_A.inverse();
+    Eigen::Matrix<double, 6, 7> analytical_jacobian = T_A_1 * jacobian;
 
     Eigen::Quaterniond desired_quat{};
     Eigen::Quaterniond error_quat{};
@@ -1831,6 +1881,8 @@ void ImpedanceController::control() {
       desired_quat.y() = desired_pose.orientation.y;
       desired_quat.z() = desired_pose.orientation.z;
       desired_quat.normalize();
+      auto zyz_desired_angles =
+          desired_quat.toRotationMatrix().eulerAngles(2, 1, 2);
 
       error_quat = desired_quat * current_quat.inverse();
       error_quat.normalize();
@@ -1842,19 +1894,25 @@ void ImpedanceController::control() {
       error_pose_vec(3) = error_quat.x();
       error_pose_vec(4) = error_quat.y();
       error_pose_vec(5) = error_quat.z();
+      // error_pose_vec(3) =
+      //     normalize_angle_diff(zyz_desired_angles(0) - current_euler_zyz(0));
+      // error_pose_vec(4) =
+      //     normalize_angle_diff(zyz_desired_angles(1) - current_euler_zyz(1));
+      // error_pose_vec(5) =
+      //     normalize_angle_diff(zyz_desired_angles(2) - current_euler_zyz(2));
     }
 
     // Calculate quantities for control
     //
-    if (compliance_mode.load() && wrist_contact_frame.has_value()) {
-      jacobian = panda.getGeometricalJacobian("fr3_joint4");
-    } else {
-      jacobian = panda.getGeometricalJacobian(frame_id_name);
-    }
 
     // Calculate jacobian SVD
+
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU |
                                                         Eigen::ComputeThinV);
+
+    // Eigen::JacobiSVD<Eigen::MatrixXd> svd(
+    //     analytical_jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
+
     double sigma_min = svd.singularValues().tail(1)(0);
 
     // Doesn't account for friction
@@ -1871,9 +1929,14 @@ void ImpedanceController::control() {
 
     jacobian_pinv = compute_jacob_pseudoinv(jacobian, lambda);
 
+    // jacobian_pinv = compute_jacob_pseudoinv(analytical_jacobian, lambda);
+
     Eigen::Vector<double, 6> current_twist, error_twist;
     {
       std::lock_guard<std::mutex> lock(desired_twist_mutex);
+      // current_twist = analytical_jacobian * current_joints_speed;
+      // error_twist = T_A_1 * desired_twist_vec - current_twist;
+
       current_twist = jacobian * current_joints_speed;
       error_twist = desired_twist_vec - current_twist;
     }
@@ -1883,24 +1946,37 @@ void ImpedanceController::control() {
       h_e = jacobian_pinv.transpose() * extern_tau;
       RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "h_e: " << h_e);
 
+      // clang-format off
       if (compliance_mode.load()) {
 
         y = jacobian_pinv * MD_1 *
             (
-
-                -KD * current_twist
-                // + h_e
+              -KD * current_twist 
+              // -T_A.transpose() * jacobian_pinv.transpose() * extern_tau
+             - jacobian_pinv.transpose() * extern_tau
+              - MD *
+                   get_j_dot(get_jacob, current_joints_config_vec,
+                             current_joints_speed) *
+                   current_joints_speed
 
             );
-        control_input = mass_matrix * y + non_linear_effects - gravity;
       } else {
-        y_cartesian = MD_1 * (MD * desired_accel_vec + KD * error_twist +
-                              KP * error_pose_vec
-                              // + h_e
-                             );
+        y_cartesian =
+            (
+             // MD * T_A_1 * desired_accel_vec +
+             MD * desired_accel_vec +
+             KD * error_twist + KP * error_pose_vec -
+             MD *
+                 get_j_dot(get_jacob, current_joints_config_vec,
+                           current_joints_speed) *
+                 current_joints_speed
+             - compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3) * extern_tau
+             // - T_A.transpose() * jacobian_pinv.transpose() * extern_tau
+        );
 
-        y = jacobian_pinv * y_cartesian;
+        y = jacobian_pinv * MD_1 * y_cartesian;
       }
+      // clang-format: on
     }
 
     control_input =
@@ -1911,8 +1987,8 @@ void ImpedanceController::control() {
     //
     clamp_control(control_input);
 
-    clamp_control_speed(control_input,
-                        (this->now() - last_control_cycle).seconds());
+    // clamp_control_speed(control_input,
+    //                     (this->now() - last_control_cycle).seconds());
 
     // Apply control
     //
@@ -1929,6 +2005,8 @@ void ImpedanceController::control() {
     if (debug_pub.data().mut.try_lock()) {
 
       debug_pub.data().h_e = h_e;
+      debug_pub.data().h_e_calculated =
+          compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3) * extern_tau;
       debug_pub.data().tau_ext = extern_tau;
       debug_pub.data().lambda = lambda;
       debug_pub.data().sigma_min = sigma_min;

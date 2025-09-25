@@ -175,8 +175,6 @@ private:
                            << q0.position[4] << ", " << q0.position[5] << ", "
                            << q0.position[6] << "]");
 
-    std::this_thread::sleep_for(3s);
-
     rclcpp::Time t0 = this->get_clock()->now();
     rclcpp::Duration t = rclcpp::Duration(0, 0);
 

@@ -56,6 +56,7 @@ const std::string pose_error_topic_name{"/pose_error"};
 const std::string demo_state_topic_name{"/state_color"};
 const std::string wrist_contact_index_topic_name{"/panda/wrist_contact_index"};
 const std::string human_presence_topic{"/human_present"};
+const std::string human_contact_topic{"/human_contact"};
 
 /////////////////////////////////////////////////////////////
 const std::string panda_traj_move_action_name{"joint_traj_action"};

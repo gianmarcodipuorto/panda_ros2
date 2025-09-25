@@ -1,5 +1,6 @@
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "image_processing/constants.hpp"
+#include "panda_interfaces/msg/human_contact.hpp"
 #include "panda_utils/constants.hpp"
 #include "panda_utils/utils_func.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -35,7 +36,8 @@ class HumanPresence : public rclcpp::Node {
 public:
   HumanPresence() : Node("human_presence") {
     // Parameter declarations
-    this->declare_parameter("robot_base_frame_name", "panda_link0");
+    this->declare_parameter("contact_threshold", 0.1);
+    this->declare_parameter("no_contact_threshold", 0.15);
 
     // Initialize TF buffer and listener
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -57,6 +59,10 @@ public:
     human_present_pub = this->create_publisher<std_msgs::msg::Bool>(
         panda_interface_names::human_presence_topic,
         panda_interface_names::DEFAULT_TOPIC_QOS());
+    human_contact_pub =
+        this->create_publisher<panda_interfaces::msg::HumanContact>(
+            panda_interface_names::human_contact_topic,
+            panda_interface_names::DEFAULT_TOPIC_QOS());
 
     RCLCPP_INFO(this->get_logger(), "HumanPresence node initialized. Timer "
                                     "can be activated via "
@@ -67,8 +73,11 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr activate_timer_service_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr human_present_pub;
+  rclcpp::Publisher<panda_interfaces::msg::HumanContact>::SharedPtr
+      human_contact_pub;
 
   std_msgs::msg::Bool human_presence;
+  panda_interfaces::msg::HumanContact human_contact;
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
@@ -78,6 +87,19 @@ private:
 
   human_presence::HumanPresentState
       presence_state_; // Member variable for the state
+
+  double robot_radius_area_ = robot_radius_area;
+  rclcpp::Duration max_tf_age_ = max_tf_age;
+  double contact_threshold_;
+  double no_contact_threshold_;
+
+  enum WristContactState { NONE, CONTACT_THRESHOLD, HYSTERESIS };
+  WristContactState left_wrist_state_ = NONE;
+  WristContactState right_wrist_state_ = NONE;
+  std::string last_contact_link_lw_ = "";
+  std::string last_contact_wrist_lw_ = "";
+  std::string last_contact_link_rw_ = "";
+  std::string last_contact_wrist_rw_ = "";
 
   void timer_callback() {
     std::map<std::string, geometry_msgs::msg::TransformStamped>
@@ -107,7 +129,7 @@ private:
           auto keypoint_frame = tf_buffer_->lookupTransform(
               keypoint_frame_name, "world", tf2::TimePointZero);
 
-          if (now - keypoint_frame.header.stamp >= max_tf_age) {
+          if (now - keypoint_frame.header.stamp >= max_tf_age_) {
             continue;
           }
         } catch (const tf2::TransformException &ex) {
@@ -134,7 +156,7 @@ private:
       for (std::pair<std::string, geometry_msgs::msg::TransformStamped>
                named_tf : robot_links_body_keypoints_tfs) {
         double dist = geom_utils::distance(named_tf.second);
-        if (dist <= robot_radius_area) {
+        if (dist <= robot_radius_area_) {
           human_in_area = true;
           break;
         }
@@ -171,8 +193,105 @@ private:
       human_present_pub->publish(human_presence);
       last_time = this->now();
 
-      rclcpp::sleep_for(100ms);
+      // New Feature: Human contact estimation and publishing
+      if (presence_state_.human_present) {
+        double min_dist_lw = std::numeric_limits<double>::infinity();
+        std::string contacted_link_frame_lw = "";
 
+        double min_dist_rw = std::numeric_limits<double>::infinity();
+        std::string contacted_link_frame_rw = "";
+
+        std::string left_wrist_frame_name =
+            image_constants::coco_keypoints.at(image_constants::LEFT_WRIST_IDX);
+        std::string right_wrist_frame_name = image_constants::coco_keypoints.at(
+            image_constants::RIGHT_WRIST_IDX);
+
+        for (auto robot_frame_name : panda_interface_names::panda_link_names) {
+          // Left Wrist
+          try {
+            auto tf_lw = tf_buffer_->lookupTransform(
+                robot_frame_name, left_wrist_frame_name, tf2::TimePointZero);
+            double dist_lw = geom_utils::distance(tf_lw);
+            if (dist_lw < min_dist_lw) {
+              min_dist_lw = dist_lw;
+              contacted_link_frame_lw = robot_frame_name;
+            }
+          } catch (const tf2::TransformException &ex) {
+            // Transform not found, ignore
+          }
+
+          // Right Wrist
+          try {
+            auto tf_rw = tf_buffer_->lookupTransform(
+                robot_frame_name, right_wrist_frame_name, tf2::TimePointZero);
+            double dist_rw = geom_utils::distance(tf_rw);
+            if (dist_rw < min_dist_rw) {
+              min_dist_rw = dist_rw;
+              contacted_link_frame_rw = robot_frame_name;
+            }
+          } catch (const tf2::TransformException &ex) {
+            // Transform not found, ignore
+          }
+        }
+
+        // Left Wrist State Logic
+        if (min_dist_lw <= contact_threshold_) {
+          left_wrist_state_ = CONTACT_THRESHOLD;
+          last_contact_link_lw_ = contacted_link_frame_lw;
+          last_contact_wrist_lw_ = left_wrist_frame_name;
+        } else if (min_dist_lw > no_contact_threshold_) {
+          left_wrist_state_ = NONE;
+          last_contact_link_lw_ = "";
+          last_contact_wrist_lw_ = "";
+        } else if (left_wrist_state_ !=
+                   NONE) { // Between thresholds, maintain state
+          left_wrist_state_ = HYSTERESIS;
+        }
+
+        // Right Wrist State Logic
+        if (min_dist_rw <= contact_threshold_) {
+          right_wrist_state_ = CONTACT_THRESHOLD;
+          last_contact_link_rw_ = contacted_link_frame_rw;
+          last_contact_wrist_rw_ = right_wrist_frame_name;
+        } else if (min_dist_rw > no_contact_threshold_) {
+          right_wrist_state_ = NONE;
+          last_contact_link_rw_ = "";
+          last_contact_wrist_rw_ = "";
+        } else if (right_wrist_state_ !=
+                   NONE) { // Between thresholds, maintain state
+          right_wrist_state_ = HYSTERESIS;
+        }
+
+        panda_interfaces::msg::HumanContact contact_msg;
+        if (left_wrist_state_ != NONE &&
+            (right_wrist_state_ == NONE || min_dist_lw <= min_dist_rw)) {
+          contact_msg.in_contact_wrist.data = last_contact_wrist_lw_;
+          contact_msg.joint_frame.data = last_contact_link_lw_;
+        } else if (right_wrist_state_ != NONE) {
+          contact_msg.in_contact_wrist.data = last_contact_wrist_rw_;
+          contact_msg.joint_frame.data = last_contact_link_rw_;
+        } else {
+          // No wrist in contact beyond hysteresis
+          contact_msg.in_contact_wrist.data = "";
+          contact_msg.joint_frame.data = "";
+        }
+        human_contact_pub->publish(contact_msg);
+
+      } else { // Human not present in the area, clear any contact
+        left_wrist_state_ = NONE;
+        right_wrist_state_ = NONE;
+        last_contact_link_lw_ = "";
+        last_contact_wrist_lw_ = "";
+        last_contact_link_rw_ = "";
+        last_contact_wrist_rw_ = "";
+
+        panda_interfaces::msg::HumanContact contact_msg;
+        contact_msg.in_contact_wrist.data = "";
+        contact_msg.joint_frame.data = "";
+        human_contact_pub->publish(contact_msg);
+      }
+
+      rclcpp::sleep_for(100ms);
     }
   }
 

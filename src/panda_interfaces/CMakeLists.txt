@@ -13,17 +13,13 @@ find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "./msg/JacobColumn.msg"
   "./msg/JointsPos.msg"
   "./msg/JointsEffort.msg"
   "./srv/SendJointsPosCmd.srv"
-  "./srv/CalculateJacobian.srv"
-  "./msg/JacobianMatrix.msg"
   "./msg/Result.msg"
-  "./srv/ForwardKine.srv"
-  "./msg/CLIKParameters.msg"
-  "./srv/CLIK.srv"
+  "./msg/HumanContact.msg"
   "./action/CartTraj.action"
+  "./srv/WristContact.srv"
   "./action/JointTraj.action"
   "./msg/WrenchArray.msg"
   "./msg/JointsCommand.msg"
@@ -34,10 +30,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "./msg/HumanDetected.msg"
   "./msg/DoubleArrayStamped.msg"
   "./msg/DoubleStamped.msg"
-  "./msg/FloatStringPair.msg"
   "./msg/BodyLengths.msg"
   "./action/StopTraj.action"
-  "./srv/WristContact.srv"
   "./msg/WristContact.msg"
   "./msg/CartesianCommand.msg"
   DEPENDENCIES tf2_msgs geometry_msgs std_msgs

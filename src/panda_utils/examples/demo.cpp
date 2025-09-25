@@ -225,8 +225,13 @@ int main(int argc, char **argv) {
 
   // Choosing home pose
 
-  home_pose.orientation.w = 0.0;
-  home_pose.orientation.x = 1.0;
+  // home_pose.orientation.w = 0.0;
+  // home_pose.orientation.x = 1.0;
+  // home_pose.orientation.y = 0.0;
+  // home_pose.orientation.z = 0.0;
+
+  home_pose.orientation.w = 0.173648;
+  home_pose.orientation.x = 0.984808;
   home_pose.orientation.y = 0.0;
   home_pose.orientation.z = 0.0;
 

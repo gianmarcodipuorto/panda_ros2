@@ -95,7 +95,7 @@ def generate_launch_description():
 
     world_base_link = DeclareLaunchArgument(
         'world_base_link',
-        default_value='[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]',
+        default_value='[0.25, 0.17, 0.845, 1.0, 0.0, 0.0, 0.0]',
         description='Base to world transform'
     )
 
@@ -246,7 +246,7 @@ def generate_launch_description():
         # external_force_estimator,
 
         # clik_cmd_pub,
-        # inverse_dynamics_controller,
+        inverse_dynamics_controller,
         # publish_tfs_and_estimate_forces
-        # joint_traj_server,
+        joint_traj_server,
     ])
