@@ -6,6 +6,7 @@
 #include "tf2_ros/transform_broadcaster.hpp"
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <std_srvs/srv/set_bool.hpp>
+#include <tf2/LinearMath/Transform.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include <atomic>
@@ -20,7 +21,7 @@ public:
       : rclcpp::Node("frame_publisher_node"), publishing_enabled_(false) {
     // Declare and get parameters
     this->declare_parameter<double>("publish_rate", 100.0);
-    this->declare_parameter<std::string>("robot_base_frame_id", "world");
+    this->declare_parameter<std::string>("robot_base_frame_id", "fr3_link0");
 
     double publish_rate = this->get_parameter("publish_rate").as_double();
     robot_base_frame_id_ =
@@ -39,7 +40,8 @@ public:
     // corresponding frame_ids.
     poses_subscription_ =
         this->create_subscription<geometry_msgs::msg::PoseArray>(
-            "~/poses_to_publish", rclcpp::SystemDefaultsQoS(),
+            panda_interface_names::panda_frame_poses_topic_name,
+            panda_interface_names::DEFAULT_TOPIC_QOS(),
             std::bind(&FramePublisher::posesCallback, this,
                       std::placeholders::_1));
 
@@ -111,24 +113,26 @@ private:
     }
 
     rclcpp::Time now = this->now();
+    std::string prev_frame = robot_base_frame_id_;
+    tf2::Transform prev_abs_tf = tf2::Transform::getIdentity();
 
     for (size_t i = 0; i < poses_to_publish_.size(); ++i) {
       geometry_msgs::msg::TransformStamped transform_stamped;
       transform_stamped.header.stamp = now;
-      transform_stamped.header.frame_id = robot_base_frame_id_;
+      transform_stamped.header.frame_id = prev_frame;
       transform_stamped.child_frame_id =
           frame_ids_to_publish_[i + 1]; // First one is fr3_link0
 
-      // Convert geometry_msgs::msg::Pose to geometry_msgs::msg::Transform
-      transform_stamped.transform.translation.x =
-          poses_to_publish_[i].position.x;
-      transform_stamped.transform.translation.y =
-          poses_to_publish_[i].position.y;
-      transform_stamped.transform.translation.z =
-          poses_to_publish_[i].position.z;
-      transform_stamped.transform.rotation = poses_to_publish_[i].orientation;
+      tf2::Transform current_abs_tf;
+      tf2::fromMsg(poses_to_publish_[i], current_abs_tf);
 
+      tf2::Transform relative_tf = prev_abs_tf.inverse() * current_abs_tf;
+      // Convert geometry_msgs::msg::Pose to geometry_msgs::msg::Transform
+      transform_stamped.transform = tf2::toMsg(relative_tf);
       tf_broadcaster_->sendTransform(transform_stamped);
+
+      prev_abs_tf = current_abs_tf;
+      prev_frame = frame_ids_to_publish_[i + 1];
     }
     RCLCPP_DEBUG(this->get_logger(), "Published %zu frames.",
                  poses_to_publish_.size());

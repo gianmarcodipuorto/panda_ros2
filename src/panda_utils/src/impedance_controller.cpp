@@ -47,6 +47,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <franka/lowpass_filter.h>
 #include <franka/model.h>
 #include <franka/robot.h>
@@ -165,6 +166,45 @@ Eigen::Matrix<double, 3, 3> s_operator(const Eigen::Quaterniond &quat) {
   mat(2, 0) = quat.y();
   mat(2, 1) = quat.x();
   return mat;
+}
+
+Eigen::Matrix3d skewSymmetricMatrix(const Eigen::Vector3d &p) {
+  Eigen::Matrix3d p_cross;
+  p_cross << 0, -p(2), p(1), p(2), 0, -p(0), -p(1), p(0), 0;
+  return p_cross;
+}
+
+Eigen::Matrix<double, 6, 6> calculateAdjoint(const Eigen::Matrix4d &T_matrix) {
+  Eigen::Matrix3d R = T_matrix.block<3, 3>(0, 0);
+  Eigen::Vector3d p = T_matrix.block<3, 1>(0, 3);
+
+  Eigen::Matrix3d p_cross_R = skewSymmetricMatrix(p) * R;
+
+  Eigen::Matrix<double, 6, 6> Ad_T = Eigen::Matrix<double, 6, 6>::Zero();
+  Ad_T.block<3, 3>(0, 0) = R;
+  Ad_T.block<3, 3>(0, 3) = p_cross_R;
+  Ad_T.block<3, 3>(3, 3) = R;
+
+  return Ad_T;
+}
+
+Eigen::Matrix<double, 6, 6>
+calculateAdjointForWrenches(const Eigen::Matrix4d &T_source_to_target) {
+  // Extract rotation matrix R and translation vector p from the homogeneous
+  // transform
+  Eigen::Matrix3d R = T_source_to_target.block<3, 3>(0, 0);
+  Eigen::Vector3d p = T_source_to_target.block<3, 1>(0, 3);
+
+  // Compute [p]_x * R
+  Eigen::Matrix3d p_cross_R = skewSymmetricMatrix(p) * R;
+
+  // Construct the 6x6 adjoint matrix for wrenches
+  Eigen::Matrix<double, 6, 6> Ad_wrench_T = Eigen::Matrix<double, 6, 6>::Zero();
+  Ad_wrench_T.block<3, 3>(0, 0) = R;         // Top-left: R
+  Ad_wrench_T.block<3, 3>(3, 0) = p_cross_R; // Bottom-left: [p]_x * R
+  Ad_wrench_T.block<3, 3>(3, 3) = R;         // Bottom-right: R
+
+  return Ad_wrench_T;
 }
 
 Eigen::Matrix<double, 7, 6>
@@ -398,6 +438,16 @@ public:
     franka_frame_enum_to_link_name[franka::Frame::kJoint7] = "fr3_link7";
     franka_frame_enum_to_link_name[franka::Frame::kFlange] =
         "fr3_link8"; // Typically end-effector name
+
+    robot_link_name_to_franka_frame["fr3_link1"] = franka::Frame::kJoint1;
+    robot_link_name_to_franka_frame["fr3_link2"] = franka::Frame::kJoint2;
+    robot_link_name_to_franka_frame["fr3_link3"] = franka::Frame::kJoint3;
+    robot_link_name_to_franka_frame["fr3_link4"] = franka::Frame::kJoint4;
+    robot_link_name_to_franka_frame["fr3_link5"] = franka::Frame::kJoint5;
+    robot_link_name_to_franka_frame["fr3_link6"] = franka::Frame::kJoint6;
+    robot_link_name_to_franka_frame["fr3_link7"] = franka::Frame::kJoint7;
+    robot_link_name_to_franka_frame["fr3_link8"] =
+        franka::Frame::kFlange; // Typically end-effector name
 
     // Define mode of operation
     if (use_robot) {
@@ -689,12 +739,20 @@ public:
 
         // Get current pose and jacobian according to stiffness or flange
         // frame
-        if (compliance_mode.load() && EE_to_K_transform.has_value()) {
-          // I have to get Kstiffness frame pose if also EE_to_K has value
-          current_pose = get_pose(
-              panda_franka_model->pose(franka::Frame::kStiffness, state));
-          jacobian = get_jacobian(panda_franka_model->zeroJacobian(
-              franka::Frame::kStiffness, state));
+        if (compliance_mode.load() && last_joint_contact_frame.has_value() &&
+            transform_to_wrist.has_value()) {
+
+          adjoint_jacob = calculateAdjoint(transform_to_wrist.value());
+
+          // adjoint_wrench =
+          //     calculateAdjointForWrenches(transform_to_wrist.value());
+
+          current_pose = get_pose(panda_franka_model->pose(
+              last_joint_contact_frame.value(), state));
+
+          jacobian =
+              adjoint_jacob * get_jacobian(panda_franka_model->zeroJacobian(
+                                  last_joint_contact_frame.value(), state));
         } else {
           current_pose =
               get_pose(panda_franka_model->pose(franka::Frame::kFlange, state));
@@ -1140,11 +1198,48 @@ public:
 
           // Frame poses publisher thread
           std::thread{[this]() {
+            while (!enable_frame_publishing_client->wait_for_service()) {
+            }
             std_srvs::srv::SetBool_Request req;
             req.data = true;
             enable_frame_publishing_client->async_send_request(
                 std::make_shared<std_srvs::srv::SetBool_Request>(req));
             poses_publish_loop();
+          }}.detach();
+
+          // Applied external force frame
+          std::thread{[this]() {
+            while (start_flag.load() && rclcpp::ok()) {
+              if (compliance_mode.load()) {
+                if (!human_contact_info.in_contact_wrist.data.empty() &&
+                    !human_contact_info.joint_frame.data.empty()) {
+                  try {
+                    last_joint_contact_frame =
+                        robot_link_name_to_franka_frame[human_contact_info
+                                                            .joint_frame.data];
+                    // geometry_msgs::msg::TransformStamped transform =
+                    //     tf_buffer->lookupTransform(
+                    //         human_contact_info.joint_frame.data,
+                    //         human_contact_info.in_contact_wrist.data,
+                    //         tf2::TimePointZero);
+                    // transform_to_wrist =
+                    //     tf2::transformToEigen(transform.transform).matrix();
+                    transform_to_wrist = Eigen::Matrix4d::Identity();
+                  } catch (std::exception &ex) {
+                    RCLCPP_ERROR(this->get_logger(),
+                                 "Error calculating external force frame: %s",
+                                 ex.what());
+                    last_joint_contact_frame = std::nullopt;
+                    transform_to_wrist = std::nullopt;
+                  }
+                }
+              } else {
+                std::this_thread::sleep_for(500ms);
+                last_joint_contact_frame = std::nullopt;
+                transform_to_wrist = std::nullopt;
+              }
+              std::this_thread::sleep_for(50ms);
+            }
           }}.detach();
 
           // Debug publisher thread
@@ -1414,10 +1509,14 @@ private:
   std::optional<franka::Model> panda_franka_model;
   robot_state panda_franka_state;
   panda_interfaces::msg::HumanContact human_contact_info{};
-  std::optional<std::string> wrist_contact_frame{std::nullopt};
-  std::optional<std::array<double, 16>> EE_to_K_transform{std::nullopt};
+  std::optional<franka::Frame> last_joint_contact_frame{std::nullopt};
+  std::optional<Eigen::Matrix4d> transform_to_wrist{};
   Eigen::Quaterniond old_quaternion;
   Eigen::Matrix<double, 6, 7> jacobian = Eigen::Matrix<double, 6, 7>::Zero();
+  Eigen::Matrix<double, 6, 6> adjoint_jacob =
+      Eigen::Matrix<double, 6, 6>::Zero();
+  Eigen::Matrix<double, 6, 6> adjoint_wrench =
+      Eigen::Matrix<double, 6, 6>::Zero();
 
   std::mutex joint_state_mutex;
   JointState::SharedPtr current_joint_config{nullptr};
@@ -1473,6 +1572,7 @@ private:
 
   // Map Franka frames to child frame names for TF publishing
   std::map<franka::Frame, std::string> franka_frame_enum_to_link_name;
+  std::map<std::string, franka::Frame> robot_link_name_to_franka_frame;
 
   // Control loop related variables
   rclcpp::Rate::SharedPtr control_loop_rate;
@@ -1889,7 +1989,7 @@ void ImpedanceController::control() {
 
     panda.computeAll(current_joints_config_vec, current_joints_speed);
 
-    if (compliance_mode.load() && wrist_contact_frame.has_value()) {
+    if (compliance_mode.load()) {
       jacobian = panda.getGeometricalJacobian("fr3_joint4");
     } else {
       jacobian = panda.getGeometricalJacobian(frame_id_name);
@@ -2254,9 +2354,8 @@ void ImpedanceController::control_libfranka_sim() {
     // Get current pose
     Pose current_pose;
     Eigen::Matrix<double, 6, 7> jacobian;
-    if (compliance_mode.load() && EE_to_K_transform.has_value()) {
+    if (compliance_mode.load() ) {
       // I have to get Kstiffness frame pose if also EE_to_K has value
-      panda_franka->setK(EE_to_K_transform.value());
       current_pose =
           get_pose(panda_franka_model->pose(franka::Frame::kStiffness, state));
       jacobian = get_jacobian(

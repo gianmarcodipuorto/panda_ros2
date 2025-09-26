@@ -166,7 +166,7 @@ private:
     RCLCPP_INFO(this->get_logger(), "Executing goal");
     if (realtime_tools::has_realtime_kernel() &&
         !this->get_parameter("use_sim_time").as_bool()) {
-      if (!realtime_tools::configure_sched_fifo(95)) {
+      if (!realtime_tools::configure_sched_fifo(90)) {
         RCLCPP_WARN(this->get_logger(),
                     "Execute thread: Could not set SCHED_FIFO."
                     " Running with default scheduler.");

@@ -36,8 +36,14 @@ class HumanPresence : public rclcpp::Node {
 public:
   HumanPresence() : Node("human_presence") {
     // Parameter declarations
-    this->declare_parameter("contact_threshold", 0.1);
-    this->declare_parameter("no_contact_threshold", 0.15);
+    this->declare_parameter("contact_threshold", 0.05);
+    this->declare_parameter("no_contact_threshold", 0.1);
+    this->declare_parameter("wrist_estimation", false);
+
+    contact_threshold_ = this->get_parameter("contact_threshold").as_double();
+    no_contact_threshold_ =
+        this->get_parameter("no_contact_threshold").as_double();
+    wrist_estimation_ = this->get_parameter("wrist_estimation").as_bool();
 
     // Initialize TF buffer and listener
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -59,6 +65,7 @@ public:
     human_present_pub = this->create_publisher<std_msgs::msg::Bool>(
         panda_interface_names::human_presence_topic,
         panda_interface_names::DEFAULT_TOPIC_QOS());
+
     human_contact_pub =
         this->create_publisher<panda_interfaces::msg::HumanContact>(
             panda_interface_names::human_contact_topic,
@@ -92,6 +99,7 @@ private:
   rclcpp::Duration max_tf_age_ = max_tf_age;
   double contact_threshold_;
   double no_contact_threshold_;
+  bool wrist_estimation_;
 
   enum WristContactState { NONE, CONTACT_THRESHOLD, HYSTERESIS };
   WristContactState left_wrist_state_ = NONE;
@@ -106,12 +114,6 @@ private:
         robot_links_body_keypoints_tfs;
 
     rclcpp::Time last_time{this->get_clock()->now()};
-    rclcpp::Time last_time_print{this->get_clock()->now()}; // Only used for
-    // a print throttle in original thread, removed.
-
-    bool print_every_half_sec =
-        (this->get_clock()->now() - last_time_print).seconds() > 0.5; // Only
-    //     used for a print throttle in original thread, removed.
 
     if (tf_buffer_->canTransform(robot_base_frame_name, "world",
                                  tf2::TimePointZero)) {
@@ -136,7 +138,6 @@ private:
           RCLCPP_ERROR_STREAM_THROTTLE(
               this->get_logger(), *this->get_clock(), 10000.0,
               "Keypoint transform not found: " << ex.what());
-          continue;
         }
 
         for (auto robot_frame_name : panda_interface_names::panda_link_names) {
@@ -150,6 +151,12 @@ private:
           }
         }
       }
+
+      RCLCPP_INFO_STREAM_THROTTLE(
+          this->get_logger(), *this->get_clock(), 3000.0,
+          "Transforms found: " << robot_links_body_keypoints_tfs.size());
+
+      RCLCPP_INFO_ONCE(this->get_logger(), "Finished checking keypoints");
 
       // Now will check for proximity with the entire robot
       bool human_in_area = false;
@@ -195,7 +202,7 @@ private:
 
       // Only when human is present we estimate the distance between wrists and
       // robot links
-      if (presence_state_.human_present) {
+      if (presence_state_.human_present && wrist_estimation_) {
         double min_dist_lw = std::numeric_limits<double>::infinity();
         std::string contacted_link_frame_lw = "";
 

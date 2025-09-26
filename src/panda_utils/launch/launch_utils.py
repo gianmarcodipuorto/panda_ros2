@@ -123,6 +123,24 @@ def generate_launch_description():
         description='Maximum percentage of maximum torque allowed'
     )
 
+    wrist_estimation = DeclareLaunchArgument(
+        'wrist_estimation',
+        default_value='False',
+        description='Wrist estimation enabling flag'
+    )
+
+    contact_threshold = DeclareLaunchArgument(
+        'contact_threshold',
+        default_value='0.05',
+        description='Minimum distance considered between wrist and robot links for force integration'
+    )
+
+    no_contact_threshold = DeclareLaunchArgument(
+        'no_contact_threshold',
+        default_value='0.1',
+        description='Maximum distance considered between wrist and robot links for force integration (hysteresis)'
+    )
+
     effort_cmd_server = Node(
         package='panda_utils',
         executable='send_joints_effort_server',
@@ -173,6 +191,17 @@ def generate_launch_description():
         executable='human_presence',
         name='human_presence',
         prefix = ['taskset -c 3'],
+        parameters=[{
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
+            'wrist_estimation': LaunchConfiguration('wrist_estimation'),
+            'contact_threshold': LaunchConfiguration('contact_threshold'),
+            'no_contact_threshold': LaunchConfiguration('no_contact_threshold'),
+        }],
+    )
+    frame_publisher = Node(
+        package='panda_utils',
+        executable='frame_publisher',
+        name='frame_publisher',
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }],
@@ -253,6 +282,9 @@ def generate_launch_description():
         task_gain,
         safe_joint_speed,
         safe_effort_perc,
+        wrist_estimation,
+        contact_threshold, 
+        no_contact_threshold,
         world_base_link,
         effort_cmd_server,
         cart_traj_server,
@@ -260,6 +292,7 @@ def generate_launch_description():
         loop_cart_traj_server,
         impedance_controller,
         presence_state_node,
+        frame_publisher,
 
         # publish_franks_tfs,
         # external_force_estimator,
