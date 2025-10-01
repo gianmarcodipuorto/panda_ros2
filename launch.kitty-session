@@ -1,0 +1,17 @@
+new_tab run_tab
+
+layout grid
+
+cd ~/Nextcloud/Progetti_Uni/Progetto_Robotica/panda_ros/
+
+launch 
+
+launch
+
+launch
+
+new_tab dev_tab
+
+cd ~/Nextcloud/Progetti_Uni/Progetto_Robotica/panda_ros/
+
+launch nvim

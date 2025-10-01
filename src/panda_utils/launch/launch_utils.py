@@ -29,6 +29,24 @@ def generate_launch_description():
         description='Controller Md'
     )
 
+    controller_kp_rot = DeclareLaunchArgument(
+        'controller_kp_rot',
+        default_value='200.0',
+        description='Controller Kp rotational part'
+    )
+
+    controller_kd_rot = DeclareLaunchArgument(
+        'controller_kd_rot',
+        default_value='10.0',
+        description='Controller Kd rotational part'
+    )
+
+    controller_md_rot = DeclareLaunchArgument(
+        'controller_md_rot',
+        default_value='1.0',
+        description='Controller Md rotational part'
+    )
+
     lambda_pinv = DeclareLaunchArgument(
         'lambda',
         default_value='0.01',
@@ -141,6 +159,12 @@ def generate_launch_description():
         description='Maximum distance considered between wrist and robot links for force integration (hysteresis)'
     )
 
+    home_pose = DeclareLaunchArgument(
+        'home_pose',
+        default_value='[0.5, 0.0, 0.6]',
+        description='Home pose for demo node'
+    )
+
     effort_cmd_server = Node(
         package='panda_utils',
         executable='send_joints_effort_server',
@@ -236,6 +260,9 @@ def generate_launch_description():
             'Kp': LaunchConfiguration('controller_kp'),
             'Kd': LaunchConfiguration('controller_kd'),
             'Md': LaunchConfiguration('controller_md'),
+            'Kp_rot': LaunchConfiguration('controller_kp_rot'),
+            'Kd_rot': LaunchConfiguration('controller_kd_rot'),
+            'Md_rot': LaunchConfiguration('controller_md_rot'),
             'lambda': LaunchConfiguration('lambda'),
             'k_max': LaunchConfiguration('k_max'),
             'eps': LaunchConfiguration('eps'),
@@ -251,14 +278,21 @@ def generate_launch_description():
             'safe_effort_perc': LaunchConfiguration('safe_effort_perc')
         }],
     )
-    publish_tfs_and_estimate_forces = Node(
+    frame_publisher = Node(
         package='panda_utils',
-        executable='estimate_hand_external_force',
-        name='estimate_hand_external_force',
+        executable='frame_publisher',
+        name='frame_publisher',
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
-            'robot_ip': LaunchConfiguration('robot_ip'),
-            'world_base_link': LaunchConfiguration('world_base_link')
+        }],
+    )
+    demo = Node(
+        package='panda_utils',
+        executable='demo',
+        name='demo',
+        parameters=[{
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
+            'home_pose': LaunchConfiguration('home_pose'),
         }],
     )
 
@@ -267,6 +301,9 @@ def generate_launch_description():
         controller_kp,
         controller_kd,
         controller_md,
+        controller_kp_rot,
+        controller_kd_rot,
+        controller_md_rot,
         lambda_pinv,
         eps,
         k_max,
@@ -285,6 +322,7 @@ def generate_launch_description():
         wrist_estimation,
         contact_threshold, 
         no_contact_threshold,
+        home_pose,
         world_base_link,
         effort_cmd_server,
         cart_traj_server,
@@ -293,6 +331,7 @@ def generate_launch_description():
         impedance_controller,
         presence_state_node,
         frame_publisher,
+        demo,
 
         # publish_franks_tfs,
         # external_force_estimator,

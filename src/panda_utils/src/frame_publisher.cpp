@@ -5,6 +5,7 @@
 #include "tf2_eigen/tf2_eigen.hpp" // For Eigen to geometry_msgs conversions
 #include "tf2_ros/transform_broadcaster.hpp"
 #include <geometry_msgs/msg/pose_array.hpp>
+#include <rclcpp/logging.hpp>
 #include <std_srvs/srv/set_bool.hpp>
 #include <tf2/LinearMath/Transform.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -134,8 +135,8 @@ private:
       prev_abs_tf = current_abs_tf;
       prev_frame = frame_ids_to_publish_[i + 1];
     }
-    RCLCPP_DEBUG(this->get_logger(), "Published %zu frames.",
-                 poses_to_publish_.size());
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 3000.0,
+                         "Published %zu frames.", poses_to_publish_.size());
   }
 };
 
@@ -146,62 +147,3 @@ int main(int argc, char *argv[]) {
   rclcpp::shutdown();
   return 0;
 }
-
-// void tf_publish_loop() {
-//
-//   rclcpp::Rate rate(100.0);
-//   franka::RobotState current_state;
-//   rclcpp::Time now;
-//
-//   while (start_flag.load() && rclcpp::ok()) {
-//
-//     try {
-//
-//       if (panda_franka_state.mut.try_lock() &&
-//       panda_franka_model.has_value()) {
-//         if (panda_franka_state.state.has_value()) {
-//           current_state = panda_franka_state.state.value();
-//           now = panda_franka_state.state_time;
-//           panda_franka_state.state = std::nullopt;
-//         }
-//       }
-//
-//       rclcpp::Time now = this->now();
-//
-//       tf2::Transform prev_abs_tf =
-//           tf2::Transform::getIdentity(); // Represents fr3_link0_T_prev_link
-//       std::string prev_frame_name = "fr3_link0";
-//
-//       for (auto const &[franka_enum_frame, child_link_name] :
-//            franka_frame_enum_to_link_name) {
-//         auto transform_matrix = panda_franka_model->pose(
-//             franka_enum_frame,
-//             current_state); // Gives fr3_link0_T_CurrentLink
-//         geometry_msgs::msg::Pose abs_pose_msg = get_pose(transform_matrix);
-//         tf2::Transform current_abs_tf;
-//         tf2::fromMsg(abs_pose_msg, current_abs_tf);
-//
-//         // Calculate relative transform: prev_link_T_current_link =
-//         // (fr3_link0_T_prev_link).inverse() * (fr3_link0_T_current_link)
-//         tf2::Transform relative_tf = prev_abs_tf.inverse() * current_abs_tf;
-//
-//         geometry_msgs::msg::TransformStamped tf_stamped;
-//         tf_stamped.header.stamp = now;
-//         tf_stamped.header.frame_id = prev_frame_name;
-//         tf_stamped.child_frame_id = child_link_name;
-//         tf_stamped.transform = tf2::toMsg(relative_tf);
-//         tf_broadcaster->sendTransform(tf_stamped);
-//
-//         prev_abs_tf = current_abs_tf;
-//         prev_frame_name = child_link_name;
-//       }
-//
-//     } catch (const franka::Exception &e) {
-//       RCLCPP_ERROR_STREAM(get_logger(),
-//                           "Franka robot error in TF loop: " << e.what());
-//     }
-//     panda_franka_state.mut.unlock();
-//     rate.sleep();
-//   }
-//   RCLCPP_INFO(get_logger(), "TF publish loop stopped.");
-// }

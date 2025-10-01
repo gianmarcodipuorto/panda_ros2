@@ -95,8 +95,7 @@ private:
   human_presence::HumanPresentState
       presence_state_; // Member variable for the state
 
-  double robot_radius_area_ = robot_radius_area;
-  rclcpp::Duration max_tf_age_ = max_tf_age;
+  rclcpp::Time last_time;
   double contact_threshold_;
   double no_contact_threshold_;
   bool wrist_estimation_;
@@ -113,13 +112,11 @@ private:
     std::map<std::string, geometry_msgs::msg::TransformStamped>
         robot_links_body_keypoints_tfs;
 
-    rclcpp::Time last_time{this->get_clock()->now()};
-
     if (tf_buffer_->canTransform(robot_base_frame_name, "world",
                                  tf2::TimePointZero)) {
       // Robot base exists, now get the transforms of the body
       // keypoints wrt the base
-      auto now = this->get_clock()->now();
+      auto now = this->now();
       // Clear the map to avoid getting false data
       robot_links_body_keypoints_tfs.clear();
       // Cycle through all the body keypoints frame: get the
@@ -131,24 +128,33 @@ private:
           auto keypoint_frame = tf_buffer_->lookupTransform(
               keypoint_frame_name, "world", tf2::TimePointZero);
 
-          if (now - keypoint_frame.header.stamp >= max_tf_age_) {
+          if (now - keypoint_frame.header.stamp >= max_tf_age) {
+            RCLCPP_ERROR_STREAM_THROTTLE(
+                this->get_logger(), *this->get_clock(), 2000.0,
+                "Transform too old: "
+                    << (now - keypoint_frame.header.stamp).seconds() << "s");
             continue;
+          }
+
+          for (auto robot_frame_name :
+               panda_interface_names::panda_link_names) {
+            try {
+              auto tf = tf_buffer_->lookupTransform(
+                  keypoint_frame_name, robot_frame_name, tf2::TimePointZero);
+              robot_links_body_keypoints_tfs[robot_frame_name + "_to_" +
+                                             keypoint_frame_name] = tf;
+            } catch (const tf2::TransformException &ex) {
+              RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(),
+                                          *this->get_clock(), 10000.0,
+                                          "Not found transform between "
+                                          "link and body part: "
+                                              << ex.what());
+            }
           }
         } catch (const tf2::TransformException &ex) {
           RCLCPP_ERROR_STREAM_THROTTLE(
               this->get_logger(), *this->get_clock(), 10000.0,
               "Keypoint transform not found: " << ex.what());
-        }
-
-        for (auto robot_frame_name : panda_interface_names::panda_link_names) {
-          try {
-            auto tf = tf_buffer_->lookupTransform(
-                robot_frame_name, keypoint_frame_name, tf2::TimePointZero);
-            robot_links_body_keypoints_tfs[robot_frame_name + "_to_" +
-                                           keypoint_frame_name] = tf;
-          } catch (const tf2::TransformException &ex) {
-            // Tf does not exists
-          }
         }
       }
 
@@ -163,18 +169,21 @@ private:
       for (std::pair<std::string, geometry_msgs::msg::TransformStamped>
                named_tf : robot_links_body_keypoints_tfs) {
         double dist = geom_utils::distance(named_tf.second);
-        if (dist <= robot_radius_area_) {
+        if (dist <= robot_radius_area) {
           human_in_area = true;
+          RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000.0,
+                               "Human sensed in area");
           break;
         }
       }
       // Increase the time the human have been seen inside the area
       // or decrease if he's not there
-      if (human_in_area) {
-        presence_state_.time_present += (this->get_clock()->now() - last_time);
-      } else {
-        presence_state_.time_present -= (this->get_clock()->now() - last_time);
+      if (human_in_area && robot_links_body_keypoints_tfs.size() != 0) {
+        presence_state_.time_present += (this->now() - last_time);
+      } else if (robot_links_body_keypoints_tfs.size() != 0) {
+        presence_state_.time_present -= (this->now() - last_time);
       }
+
       // Normalize the time according to limit
       presence_state_.normalize_time();
       if (human_in_area &&
@@ -193,7 +202,7 @@ private:
       }
 
       if (presence_state_.human_present) {
-        RCLCPP_ERROR_STREAM(this->get_logger(), "HUMAN PRESENT IN THE AREA");
+        // RCLCPP_ERROR_STREAM(this->get_logger(), "HUMAN PRESENT IN THE AREA");
       }
 
       human_presence.data = presence_state_.human_present;
@@ -203,6 +212,7 @@ private:
       // Only when human is present we estimate the distance between wrists and
       // robot links
       if (presence_state_.human_present && wrist_estimation_) {
+        RCLCPP_INFO_ONCE(this->get_logger(), "Calculating wrist distance");
         double min_dist_lw = std::numeric_limits<double>::infinity();
         std::string contacted_link_frame_lw = "";
 
@@ -215,6 +225,10 @@ private:
             image_constants::RIGHT_WRIST_IDX);
 
         for (auto robot_frame_name : panda_interface_names::panda_link_names) {
+
+          if (robot_frame_name == robot_base_frame_name) {
+            continue;
+          }
 
           // Left Wrist distances
           try {
@@ -243,11 +257,22 @@ private:
           }
         }
 
+        // RCLCPP_INFO_STREAM(this->get_logger(),
+        //                    "Left wrist distance: " << min_dist_lw
+        //                                            << " from link: "
+        //                                            <<
+        //                                            contacted_link_frame_lw);
+        // RCLCPP_INFO_STREAM(this->get_logger(),
+        //                    "Rigth wrist distance: " << min_dist_rw
+        //                                             << " from link: "
+        //                                             <<
+        //                                             contacted_link_frame_rw);
+
         // Left Wrist State Logic
         // If under threshold is in contact; If over the 'no_contact' threshold
         // is not in contact at all; If between the 2 thresholds is in
         // Hysteresis mode
-        if (min_dist_lw <= contact_threshold_) {
+        if (min_dist_lw <= contact_threshold_ && left_wrist_state_ == NONE) {
           left_wrist_state_ = CONTACT_THRESHOLD;
           last_contact_link_lw_ = contacted_link_frame_lw;
           last_contact_wrist_lw_ = left_wrist_frame_name;
@@ -261,7 +286,7 @@ private:
         }
 
         // Right Wrist State Logic
-        if (min_dist_rw <= contact_threshold_) {
+        if (min_dist_rw <= contact_threshold_ && right_wrist_state_ == NONE) {
           right_wrist_state_ = CONTACT_THRESHOLD;
           last_contact_link_rw_ = contacted_link_frame_rw;
           last_contact_wrist_rw_ = right_wrist_frame_name;
@@ -315,6 +340,7 @@ private:
         RCLCPP_WARN(this->get_logger(),
                     "Attempted to activate an already active timer.");
       } else {
+        last_time = this->now();
         timer_->reset(); // Start the timer
         response->success = true;
         response->message = "Human presence timer activated.";
