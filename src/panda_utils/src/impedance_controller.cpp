@@ -479,7 +479,7 @@ public:
 
     robot_joint_states_sub = this->create_subscription<JointState>(
         panda_interface_names::joint_state_topic_name,
-        panda_interface_names::CONTROLLER_SUBSCRIBER_QOS(), set_joint_state);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_joint_state);
 
     auto set_cartesian_cmd =
         [this](
@@ -1853,11 +1853,11 @@ private:
   Eigen::Matrix<double, 7, 6>
   compute_jacob_pseudoinv(const Eigen::Matrix<double, 6, 7> &jacobian,
                           const double &lambda) {
-    // return jacobian.transpose() *
-    //        (jacobian * jacobian.transpose() +
-    //         lambda * lambda * Eigen::Matrix<double, 6, 6>::Identity())
-    //            .inverse();
-    return jacobian.completeOrthogonalDecomposition().pseudoInverse();
+    return jacobian.transpose() *
+           (jacobian * jacobian.transpose() +
+            lambda * lambda * Eigen::Matrix<double, 6, 6>::Identity())
+               .inverse();
+    // return jacobian.completeOrthogonalDecomposition().pseudoInverse();
   }
 
   Eigen::Matrix<double, 6, 7>
@@ -1985,11 +1985,12 @@ private:
 void ImpedanceController::control() {
   // Impedance controller
 
-  Eigen::Vector<double, 7> control_input;
-  Eigen::Vector<double, 7> y;
-  Eigen::Vector<double, 6> y_cartesian;
+  Eigen::Vector<double, 7> control_input = Eigen::Vector<double, 7>::Zero();
+  Eigen::Vector<double, 7> y = Eigen::Vector<double, 7>::Zero();
+  Eigen::Vector<double, 6> y_cartesian = Eigen::Vector<double, 6>::Zero();
   Eigen::Matrix<double, 7, 6> jacobian_pinv;
-  Eigen::Vector<double, 7> current_joints_config_vec;
+  Eigen::Vector<double, 7> current_joints_config_vec =
+      Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 7> current_joints_speed =
       Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 7> last_joints_speed = Eigen::Vector<double, 7>::Zero();
@@ -2017,11 +2018,15 @@ void ImpedanceController::control() {
   rclcpp::Time last_control_cycle = this->now();
   while (rclcpp::Time{current_joint_config->header.stamp} - this->now() ==
          rclcpp::Duration{0, 0}) {
+    RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), *this->get_clock(), 2000.0,
+                         "Waiting for simulation to start: " << current_joint_config->header.stamp.sec);
   }
 
   // Get current pose in simulation environment
   current_joint_config = nullptr;
   while (!current_joint_config) {
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000.0,
+                         "Waiting for current joint config");
   }
 
   for (size_t i = 0; i < current_joint_config->position.size(); i++) {
@@ -2057,6 +2062,7 @@ void ImpedanceController::control() {
   MD.diagonal() = MD_;
   Eigen::Matrix<double, 6, 6> MD_1 = MD.inverse();
 
+  RCLCPP_INFO(this->get_logger(), "Starting controller");
   while (start_flag.load() && rclcpp::ok()) {
 
     pose_debug.header.stamp = this->now();
@@ -2210,7 +2216,7 @@ void ImpedanceController::control() {
                  get_j_dot(get_jacob, current_joints_config_vec,
                            current_joints_speed) *
                  current_joints_speed
-             - compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3) * extern_tau
+             // - compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-3) * extern_tau
              // - T_A.transpose() * jacobian_pinv.transpose() * extern_tau
         );
 
