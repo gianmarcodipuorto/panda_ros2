@@ -267,7 +267,7 @@ public:
         home_pose_.orientation.y, home_pose_.orientation.z};
     triangle_task_goal_ = generate_triangle_task(
         home_pose_.position.x, home_pose_.position.y, home_pose_.position.z,
-        0.1, 0.2, triangle_orient.normalized(), 12.0);
+        0.1, 0.2, triangle_orient.normalized(), 9.0);
 
     stop_traj_goal_.total_time = 1.5;
   }

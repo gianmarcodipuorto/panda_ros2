@@ -60,6 +60,10 @@ void DebugPublisher::create_pubs(
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/cmd/tau_ext_calculated", qos);
 
+  tau_read_debug =
+      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
+          "debug/cmd/tau_read", qos);
+
   filtered_joints_vec_pub =
       node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
           "debug/filtered_joints_vec", qos);
@@ -265,6 +269,13 @@ void DebugPublisher::publish(rclcpp::Time now) {
       tau_external_contribute_debug->publish(arr_stamped);
     }
 
+    if (pub_data.tau_read.has_value()) {
+      for (size_t i = 0; i < 7; i++) {
+        arr_stamped.data[i] = pub_data.tau_read.value()[i];
+      }
+      tau_read_debug->publish(arr_stamped);
+    }
+
     if (pub_data.tau_ext_calculated.has_value()) {
       for (size_t i = 0; i < 7; i++) {
         arr_stamped.data[i] = pub_data.tau_ext_calculated.value()[i];
@@ -301,25 +312,25 @@ void DebugPublisher::publish(rclcpp::Time now) {
 
       accel.accel = pub_data.des_accel.value();
       desired_acceleration_debug->publish(accel);
+    }
 
-      // Twist error
-      if (pub_data.current_twist.has_value()) {
-        twist.twist.linear.x = pub_data.des_twist.value().linear.x -
-                               pub_data.current_twist.value()[0];
-        twist.twist.linear.y = pub_data.des_twist.value().linear.y -
-                               pub_data.current_twist.value()[1];
-        twist.twist.linear.z = pub_data.des_twist.value().linear.z -
-                               pub_data.current_twist.value()[2];
+    // Twist error
+    if (pub_data.current_twist.has_value()) {
+      twist.twist.linear.x = pub_data.des_twist.value().linear.x -
+                             pub_data.current_twist.value()[0];
+      twist.twist.linear.y = pub_data.des_twist.value().linear.y -
+                             pub_data.current_twist.value()[1];
+      twist.twist.linear.z = pub_data.des_twist.value().linear.z -
+                             pub_data.current_twist.value()[2];
 
-        twist.twist.angular.x = pub_data.des_twist.value().angular.x -
-                                pub_data.current_twist.value()[3];
-        twist.twist.angular.y = pub_data.des_twist.value().angular.y -
-                                pub_data.current_twist.value()[4];
-        twist.twist.angular.z = pub_data.des_twist.value().angular.z -
-                                pub_data.current_twist.value()[5];
+      twist.twist.angular.x = pub_data.des_twist.value().angular.x -
+                              pub_data.current_twist.value()[3];
+      twist.twist.angular.y = pub_data.des_twist.value().angular.y -
+                              pub_data.current_twist.value()[4];
+      twist.twist.angular.z = pub_data.des_twist.value().angular.z -
+                              pub_data.current_twist.value()[5];
 
-        velocity_error_debug->publish(twist);
-      }
+      velocity_error_debug->publish(twist);
     }
 
     // VELOCITY

@@ -161,7 +161,7 @@ def generate_launch_description():
 
     home_pose = DeclareLaunchArgument(
         'home_pose',
-        default_value='[0.5, 0.0, 0.6]',
+        default_value='[0.6, 0.0, 0.5]',
         description='Home pose for demo node'
     )
 

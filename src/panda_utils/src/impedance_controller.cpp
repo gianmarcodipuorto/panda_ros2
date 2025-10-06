@@ -730,7 +730,7 @@ public:
         if (dt.toSec() != 0.0) {
           for (int i = 0; i < 7; i++) {
             current_joints_speed[i] = franka::lowpassFilter(
-                dt.toSec(), state.dq[i], current_joints_speed[i], 10.0);
+                dt.toSec(), state.dq[i], current_joints_speed[i], 20.0);
           }
 
         } else {
@@ -810,9 +810,9 @@ public:
           error_pose_vec(0) = desired_pose.position.x - current_pose.position.x;
           error_pose_vec(1) = desired_pose.position.y - current_pose.position.y;
           error_pose_vec(2) = desired_pose.position.z - current_pose.position.z;
-          error_pose_vec(3) = 2 * error_quat.x();
-          error_pose_vec(4) = 2 * error_quat.y();
-          error_pose_vec(5) = 2 * error_quat.z();
+          error_pose_vec(3) = error_quat.x();
+          error_pose_vec(4) = error_quat.y();
+          error_pose_vec(5) = error_quat.z();
           // error_pose_vec(3) = normalize_angle_diff(zyz_desired_angles(0) -
           //                                          current_euler_zyz(0));
           // error_pose_vec(4) = normalize_angle_diff(zyz_desired_angles(1) -
@@ -854,27 +854,6 @@ public:
         Eigen::Matrix<double, 7, 6> jacobian_transposed = jacobian.transpose();
 
         if (dt.toSec() == 0.0) {
-          h_e = h_e.Zero();
-        } else {
-          h_e_measured =
-              jacobian_transposed.transpose() *
-              (jacobian_transposed * jacobian_transposed.transpose() +
-               1e-5 * 1e-5 * Eigen::Matrix<double, 7, 7>::Identity())
-                  .inverse() *
-              tau_ext_measured
-              //   -
-              // initial_h_e
-              ;
-
-          // h_e_measured = T_A_T * h_e_measured;
-
-          for (int i = 0; i < 6; i++) {
-            h_e[i] = franka::lowpassFilter(dt.toSec(), h_e_measured[i], h_e[i],
-                                           20.0);
-          }
-        }
-
-        if (dt.toSec() == 0.0) {
           extern_tau = extern_tau.Zero();
         } else {
           for (int i = 0; i < 6; i++) {
@@ -882,8 +861,26 @@ public:
                 dt.toSec(), tau_ext_measured[i], extern_tau[i], 5.0);
           }
         }
-        // extern_tau = tau_ext_measured - initial_extern_tau;
-        // h_e = h_e_measured - initial_h_e;
+
+        if (dt.toSec() == 0.0) {
+          h_e = h_e.Zero();
+        } else {
+          h_e_measured =
+              jacobian_transposed.transpose() *
+              (jacobian_transposed * jacobian_transposed.transpose() +
+               1e-5 * 1e-5 * Eigen::Matrix<double, 7, 7>::Identity())
+                  .inverse() *
+              extern_tau;
+
+          // h_e_measured = T_A_T * h_e_measured;
+
+          // for (int i = 0; i < 6; i++) {
+          //   h_e[i] = franka::lowpassFilter(dt.toSec(), h_e_measured[i],
+          //   h_e[i],
+          //                                  20.0);
+          // }
+          h_e = h_e_measured;
+        }
 
         // Calculate quantities for control
         // Calculated through libfranka lib for better accuracy
@@ -895,21 +892,10 @@ public:
         // - tau_f = torque required to compensate motor friction
         //
 
-        // Eigen::JacobiSVD<Eigen::MatrixXd> svd_transposed(
-        //     jacobian.transpose(), Eigen::ComputeThinU | Eigen::ComputeThinV);
-        // double sigma_min_transposed = svd.singularValues().tail(1)(0);
-        //
-        // // DYNAMIC LAMBDA BASED ON MINIMUM SINGULAR VALUE
-        // double lambda_transposed =
-        //     k_max * (1.0 - pow(sigma_min_transposed, 2) / pow(eps, 2));
-        // lambda = (sigma_min >= eps ? 0.0 : lambda);
         Eigen::Vector<double, 7> y;
         Eigen::Vector<double, 6> y_cartesian;
         Eigen::Vector<double, 6> current_twist;
         Eigen::Vector<double, 6> error_twist;
-        // h_e = T_A.transpose() *
-        //       compute_jacob_pseudoinv_h_e(jacobian.transpose(), 1e-5) *
-        //       tau_ext_measured;
         {
           current_twist = jacobian * current_joints_speed;
           error_twist = desired_twist_vec - current_twist;
@@ -1047,12 +1033,16 @@ public:
             debug_pub.data().tau_ext_calculated = extern_tau;
             debug_pub.data().error_theta =
                 error_angle_axis.angle() * 180.0 / M_PI;
-            // debug_pub.data().lambda = lambda;
-            // debug_pub.data().sigma_min = sigma_min;
+            debug_pub.data().lambda = lambda;
+            debug_pub.data().sigma_min = sigma_min;
             debug_pub.data().current_twist = current_twist;
             debug_pub.data().des_twist = desired_twist;
             // debug_pub.data().des_pose = desired_pose_raw;
-            // debug_pub.data().des_accel = desired_accel;
+            debug_pub.data().des_accel = desired_accel;
+            debug_pub.data().current_j_dot_q_dot =
+                get_j_dot(get_jacob, current_joints_config_vec,
+                          current_joints_speed) *
+                current_joints_speed;
             debug_pub.data().gravity = panda_franka_model->gravity(state);
             debug_pub.data().coriolis = coriolis;
             debug_pub.data().filtered_joints_vec = current_joints_speed;
@@ -1062,6 +1052,7 @@ public:
             debug_pub.data().error_pose_vec(3) = 1.0;
             debug_pub.data().tau_d_calculated = tau;
             debug_pub.data().tau_d_last = state.tau_J_d;
+            debug_pub.data().tau_read = state.tau_J;
             debug_pub.data().y = y;
             debug_pub.data().y_cartesian = y_cartesian;
 
@@ -1778,10 +1769,11 @@ private:
   Eigen::Matrix<double, 7, 6>
   compute_jacob_pseudoinv(const Eigen::Matrix<double, 6, 7> &jacobian,
                           const double &lambda) {
-    return jacobian.transpose() *
-           (jacobian * jacobian.transpose() +
-            lambda * lambda * Eigen::Matrix<double, 6, 6>::Identity())
-               .inverse();
+    // return jacobian.transpose() *
+    //        (jacobian * jacobian.transpose() +
+    //         lambda * lambda * Eigen::Matrix<double, 6, 6>::Identity())
+    //            .inverse();
+    return jacobian.completeOrthogonalDecomposition().pseudoInverse();
   }
 
   Eigen::Matrix<double, 6, 7>

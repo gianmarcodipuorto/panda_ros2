@@ -46,6 +46,9 @@ struct debug_data {
   // Last commanded tau
   std::optional<std::array<double, 7>> tau_d_last = std::array<double, 7>{};
 
+  // Total tau read
+  std::optional<std::array<double, 7>> tau_read = std::array<double, 7>{};
+
   // Robot internal state in franka::RobotState compact struct
   std::optional<franka::RobotState> robot_state = franka::RobotState{};
 
@@ -144,6 +147,8 @@ private:
   Publisher<JointsEffort>::SharedPtr y_contribute_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       y_cartesian_contribute_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
+      tau_read_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
       tau_external_contribute_debug{};
   Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
