@@ -535,6 +535,19 @@ public:
                            "Speed too high: can't set compliance mode");
               return;
             }
+
+            RCLCPP_INFO(this->get_logger(), "Decreasing KP");
+            auto start = this->now();
+            while ((this->now() - start).seconds() < 1.0) {
+              auto t = (this->now() - start).seconds();
+              KP = KP * exp(-6.0 * t);
+              RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(),
+                                          *this->get_clock(), 200.0,
+                                          "KP = " << KP);
+            }
+            RCLCPP_INFO_STREAM(this->get_logger(), "KP = " << KP);
+            KP = KP * 0.0;
+            RCLCPP_INFO(this->get_logger(), "KP = 0");
             compliance_mode.store(true);
             response->result = true;
             RCLCPP_INFO(this->get_logger(),
@@ -564,6 +577,7 @@ public:
               }
               init_cartesian_cmd(current_joints_config_vec);
             }
+            set_kp();
             compliance_mode.store(false);
             response->result = true;
             RCLCPP_INFO(this->get_logger(), "Unset controller compliance mode");
@@ -668,9 +682,7 @@ public:
                                  panda_franka_model.value(),
                                  this->get_logger());
 
-      Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp_rot, Kp_rot, Kp_rot};
-      Eigen::Matrix<double, 6, 6> KP = Eigen::Matrix<double, 6, 6>::Identity();
-      KP.diagonal() = KP_;
+      set_kp();
 
       Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd_rot, Kd_rot, Kd_rot};
       Eigen::Matrix<double, 6, 6> KD = Eigen::Matrix<double, 6, 6>::Identity();
@@ -687,16 +699,39 @@ public:
       double eps = this->get_parameter("eps").as_double();
 
       // Get jacobian function
-      auto get_jacob =
-          [this](const Eigen::Vector<double, 7> &current_joint_pos) {
-            auto state = franka::RobotState{};
-            for (size_t i = 0; i < state.q.size(); i++) {
-              state.q[i] = current_joint_pos[i];
-            }
+      // auto get_jacob =
+      //     [this](const Eigen::Vector<double, 7> &current_joint_pos) {
+      //       auto state = franka::RobotState{};
+      //       for (size_t i = 0; i < state.q.size(); i++) {
+      //         state.q[i] = current_joint_pos[i];
+      //       }
+      //
+      //       return get_jacobian(this->panda_franka_model->zeroJacobian(
+      //           franka::Frame::kFlange, state));
+      //     };
 
-            return get_jacobian(this->panda_franka_model->zeroJacobian(
-                franka::Frame::kFlange, state));
-          };
+      auto get_jacob = [this](
+                           const Eigen::Vector<double, 7> &current_joint_pos) {
+        auto state = franka::RobotState{};
+        for (size_t i = 0; i < state.q.size(); i++) {
+          state.q[i] = current_joint_pos[i];
+        }
+
+        if (compliance_mode.load() && last_joint_contact_frame.has_value() &&
+            transform_to_wrist.has_value()) {
+
+          adjoint_jacob = calculateAdjoint(transform_to_wrist.value());
+
+          jacobian =
+              adjoint_jacob * get_jacobian(panda_franka_model->zeroJacobian(
+                                  last_joint_contact_frame.value(), state));
+
+        } else {
+          jacobian = get_jacobian(
+              panda_franka_model->zeroJacobian(franka::Frame::kFlange, state));
+        }
+        return jacobian;
+      };
 
       joint_state_to_pub.position.resize(7);
       joint_state_to_pub.velocity.resize(7);
@@ -704,7 +739,7 @@ public:
       joint_state_to_pub.name = std::vector<std::string>{
           "joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"};
 
-      robot_control_callback = [this, KP, KD, MD, MD_1, k_max, eps, get_jacob](
+      robot_control_callback = [this, KD, MD, MD_1, k_max, eps, get_jacob](
                                    const franka::RobotState &state,
                                    franka::Duration dt) -> franka::Torques {
         if (!(start_flag.load() && rclcpp::ok())) {
@@ -725,8 +760,6 @@ public:
         Eigen::Map<const Eigen::Vector<double, 7>> current_joints_config_vec(
             state.q.data());
 
-        // Eigen::Map<const Eigen::Vector<double, 7>> current_joints_speed(
-        //     state.dq.data());
         if (dt.toSec() != 0.0) {
           for (int i = 0; i < 7; i++) {
             current_joints_speed[i] = franka::lowpassFilter(
@@ -738,7 +771,6 @@ public:
             current_joints_speed[i] = state.dq[i];
           }
         }
-        // last_joints_speed = current_joints_speed;
 
         Pose current_pose;
         Eigen::Quaterniond error_quat{};
@@ -779,15 +811,6 @@ public:
         current_quat = quaternionContinuity(current_quat, old_quaternion);
         old_quaternion = current_quat;
 
-        // auto current_euler_zyz =
-        //     current_quat.toRotationMatrix().eulerAngles(2, 1, 2);
-        // Eigen::Matrix<double, 6, 6> T_A = jacob_transform_matrix(
-        //     current_euler_zyz(0), current_euler_zyz(1),
-        //     current_euler_zyz(2));
-        // Eigen::Matrix<double, 6, 6> T_A_T = T_A.transpose();
-        // Eigen::Matrix<double, 6, 6> T_A_1 = T_A.inverse();
-        // Eigen::Matrix<double, 6, 7> analytical_jacobian = T_A_1 * jacobian;
-
         // Calculate pose error
         Eigen::AngleAxisd error_angle_axis;
         {
@@ -797,8 +820,6 @@ public:
           desired_quat.y() = desired_pose.orientation.y;
           desired_quat.z() = desired_pose.orientation.z;
           desired_quat.normalize();
-          // auto zyz_desired_angles =
-          //     desired_quat.toRotationMatrix().eulerAngles(2, 1, 2);
 
           error_quat = desired_quat * current_quat.inverse();
           error_quat.normalize();
@@ -813,12 +834,6 @@ public:
           error_pose_vec(3) = error_quat.x();
           error_pose_vec(4) = error_quat.y();
           error_pose_vec(5) = error_quat.z();
-          // error_pose_vec(3) = normalize_angle_diff(zyz_desired_angles(0) -
-          //                                          current_euler_zyz(0));
-          // error_pose_vec(4) = normalize_angle_diff(zyz_desired_angles(1) -
-          //                                          current_euler_zyz(1));
-          // error_pose_vec(5) = normalize_angle_diff(zyz_desired_angles(2) -
-          //                                          current_euler_zyz(2));
         }
 
         // B(q)
@@ -832,8 +847,6 @@ public:
         // Calculate jacobian SVD
         Eigen::JacobiSVD<Eigen::MatrixXd> svd(
             jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
-        // Eigen::JacobiSVD<Eigen::MatrixXd> svd(
-        //     analytical_jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
         double sigma_min = svd.singularValues().tail(1)(0);
 
         // DYNAMIC LAMBDA BASED ON MINIMUM SINGULAR VALUE
@@ -841,15 +854,10 @@ public:
         lambda = (sigma_min >= eps ? 0.0 : lambda);
         Eigen::Matrix<double, 7, 6> jacobian_pinv =
             compute_jacob_pseudoinv(jacobian, lambda);
-        // Eigen::Matrix<double, 7, 6> jacobian_pinv =
-        //     compute_jacob_pseudoinv(analytical_jacobian, lambda);
 
         // Getting external tau
         Eigen::Map<const Eigen::Vector<double, 7>> tau_ext_measured(
             state.tau_ext_hat_filtered.data());
-
-        // Eigen::Map<const Eigen::Vector<double, 6>> h_e_measured(
-        //     state.O_F_ext_hat_K.data());
 
         Eigen::Matrix<double, 7, 6> jacobian_transposed = jacobian.transpose();
 
@@ -865,20 +873,60 @@ public:
         if (dt.toSec() == 0.0) {
           h_e = h_e.Zero();
         } else {
+          Eigen::Vector<double, 7> tau_ext = extern_tau;
+          if (compliance_mode.load() && last_joint_contact_frame.has_value()) {
+            int index = 0;
+            switch (last_joint_contact_frame.value()) {
+            case franka::Frame::kJoint1: {
+              index = 0;
+              break;
+            }
+            case franka::Frame::kJoint2: {
+              index = 1;
+              break;
+            }
+            case franka::Frame::kJoint3: {
+              index = 2;
+              break;
+            }
+            case franka::Frame::kJoint4: {
+              index = 3;
+              break;
+            }
+            case franka::Frame::kJoint5: {
+              index = 4;
+              break;
+            }
+            case franka::Frame::kJoint6: {
+              index = 5;
+              break;
+            }
+            case franka::Frame::kJoint7: {
+              index = 6;
+              break;
+            }
+            case franka::Frame::kFlange: {
+              index = 6;
+              break;
+            }
+            case franka::Frame::kEndEffector:
+            case franka::Frame::kStiffness:
+              break;
+            }
+            for (int i = index + 1; i < tau_ext.size(); i++) {
+              tau_ext[i] = 0.0;
+            }
+          }
+          // h_e_measured =
+          //     jacobian_transposed.transpose() *
+          //     (jacobian_transposed * jacobian_transposed.transpose() +
+          //      1e-5 * 1e-5 * Eigen::Matrix<double, 7, 7>::Identity())
+          //         .inverse() *
+          //     tau_ext;
           h_e_measured =
-              jacobian_transposed.transpose() *
-              (jacobian_transposed * jacobian_transposed.transpose() +
-               1e-5 * 1e-5 * Eigen::Matrix<double, 7, 7>::Identity())
-                  .inverse() *
-              extern_tau;
+              compute_jacob_pseudoinv_h_e(jacobian_transposed, lambda) *
+              tau_ext;
 
-          // h_e_measured = T_A_T * h_e_measured;
-
-          // for (int i = 0; i < 6; i++) {
-          //   h_e[i] = franka::lowpassFilter(dt.toSec(), h_e_measured[i],
-          //   h_e[i],
-          //                                  20.0);
-          // }
           h_e = h_e_measured;
         }
 
@@ -899,9 +947,6 @@ public:
         {
           current_twist = jacobian * current_joints_speed;
           error_twist = desired_twist_vec - current_twist;
-
-          // current_twist = analytical_jacobian * current_joints_speed;
-          // error_twist = T_A_1 * desired_twist_vec - current_twist;
         }
 
         {
@@ -911,8 +956,6 @@ public:
             y = jacobian_pinv * MD_1 *
                 (
                   -KD * current_twist 
-                  // -T_A.transpose() * jacobian_pinv.transpose() * tau_ext_measured
-                  // - jacobian_pinv.transpose() * extern_tau
                   - MD *
                    get_j_dot(get_jacob, current_joints_config_vec,
                              current_joints_speed) *
@@ -922,7 +965,6 @@ public:
           } else {
             y_cartesian =
                 (
-                  // MD * T_A_1 * desired_accel_vec +
                   MD * desired_accel_vec +
                   KD * error_twist + KP * error_pose_vec 
                   -MD *
@@ -936,8 +978,9 @@ public:
           // clang-format on
         }
 
-        Eigen::Vector<double, 7> control_input_vec =
-            mass_matrix * y + coriolis + extern_tau;
+        Eigen::Vector<double, 7> control_input_vec = mass_matrix * y +
+                                                     coriolis + extern_tau -
+                                                     8.0 * current_joints_speed;
 
         // Clamp tau
         clamp_control(control_input_vec);
@@ -973,6 +1016,15 @@ public:
                 return franka::MotionFinished(franka::Torques(state.tau_J_d));
               }
             }
+            if (current_pose.position.z <= 0.15) {
+              RCLCPP_ERROR_STREAM(this->get_logger(),
+                                  "Height of the end affector wrt base under "
+                                  "allowed value 0.15m");
+              panda_franka->stop();
+              start_flag.store(false);
+              return franka::MotionFinished(franka::Torques(state.tau_J_d));
+            }
+
           } catch (std::exception &ex) {
             RCLCPP_ERROR_STREAM(this->get_logger(),
                                 "Error in safety checks: " << ex.what());
@@ -1592,6 +1644,7 @@ private:
   double Kp_rot{};
   double Kd_rot{};
   double Md_rot{};
+  Eigen::Matrix<double, 6, 6> KP{};
   double joint_speed_safe_limit{};
   double percentage_effort_safe_limit{};
   double error_pose_norm_safe_limit{};
@@ -1603,6 +1656,12 @@ private:
 
   // Human detection
   human_presence::HumanPresentState presence_state;
+
+  void set_kp() {
+    Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp_rot, Kp_rot, Kp_rot};
+    KP = Eigen::Matrix<double, 6, 6>::Identity();
+    KP.diagonal() = KP_;
+  }
 
   Eigen::Vector<double, 7>
   joint_limit_index_grad(const Eigen::Vector<double, 7> &current_joint_config,
@@ -1779,10 +1838,11 @@ private:
   Eigen::Matrix<double, 6, 7>
   compute_jacob_pseudoinv_h_e(const Eigen::Matrix<double, 7, 6> &jacobian,
                               const double &lambda) {
-    return jacobian.transpose() *
-           (jacobian * jacobian.transpose() +
-            lambda * lambda * Eigen::Matrix<double, 7, 7>::Identity())
-               .inverse();
+    // return jacobian.transpose() *
+    //        (jacobian * jacobian.transpose() +
+    //         lambda * lambda * Eigen::Matrix<double, 7, 7>::Identity())
+    //            .inverse();
+    return jacobian.completeOrthogonalDecomposition().pseudoInverse();
   }
 
   void publish_robot_state_libfranka(franka::RobotState state) {
@@ -2055,11 +2115,14 @@ void ImpedanceController::control() {
       error_pose_vec(4) = error_quat.y();
       error_pose_vec(5) = error_quat.z();
       // error_pose_vec(3) =
-      //     normalize_angle_diff(zyz_desired_angles(0) - current_euler_zyz(0));
+      //     normalize_angle_diff(zyz_desired_angles(0) -
+      //     current_euler_zyz(0));
       // error_pose_vec(4) =
-      //     normalize_angle_diff(zyz_desired_angles(1) - current_euler_zyz(1));
+      //     normalize_angle_diff(zyz_desired_angles(1) -
+      //     current_euler_zyz(1));
       // error_pose_vec(5) =
-      //     normalize_angle_diff(zyz_desired_angles(2) - current_euler_zyz(2));
+      //     normalize_angle_diff(zyz_desired_angles(2) -
+      //     current_euler_zyz(2));
     }
 
     // Calculate quantities for control
