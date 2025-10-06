@@ -476,7 +476,7 @@ public:
 
     robot_joint_states_sub = this->create_subscription<JointState>(
         panda_interface_names::joint_state_topic_name,
-        panda_interface_names::CONTROLLER_SUBSCRIBER_QOS(), set_joint_state);
+        panda_interface_names::DEFAULT_TOPIC_QOS(), set_joint_state);
 
     auto set_cartesian_cmd =
         [this](
@@ -878,8 +878,8 @@ public:
           extern_tau = extern_tau.Zero();
         } else {
           for (int i = 0; i < 6; i++) {
-            extern_tau[i] = franka::lowpassFilter(dt.toSec(), tau_ext_measured[i], extern_tau[i],
-                                           5.0);
+            extern_tau[i] = franka::lowpassFilter(
+                dt.toSec(), tau_ext_measured[i], extern_tau[i], 5.0);
           }
         }
         // extern_tau = tau_ext_measured - initial_extern_tau;
@@ -950,7 +950,6 @@ public:
           // clang-format on
         }
 
-
         Eigen::Vector<double, 7> control_input_vec =
             mass_matrix * y + coriolis + extern_tau;
 
@@ -963,7 +962,6 @@ public:
             control_input_vec[i] = 0.0;
           }
         } else {
-
 
           RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "Running safety checks");
           try {
@@ -1539,9 +1537,12 @@ private:
   std::mutex joint_state_mutex;
   JointState::SharedPtr current_joint_config{nullptr};
   Eigen::Vector<double, 7> extern_tau{};
+  Eigen::Vector<double, 7> extern_tau_filtered =
+      Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 7> initial_extern_tau{};
   Eigen::Vector<double, 6> initial_h_e{};
   Eigen::Vector<double, 6> h_e{};
+  Eigen::Vector<double, 6> h_e_filtered{};
   Eigen::Vector<double, 6> h_e_measured{};
   std::vector<double> world_base_link;
 
@@ -1940,11 +1941,14 @@ void ImpedanceController::control() {
   rclcpp::Time last_control_cycle = this->now();
   while (rclcpp::Time{current_joint_config->header.stamp} - this->now() ==
          rclcpp::Duration{0, 0}) {
+    RCLCPP_INFO(this->get_logger(), "Waiting for simulation to start");
   }
+  RCLCPP_INFO(this->get_logger(), "Simulation started");
 
   // Get current pose in simulation environment
   current_joint_config = nullptr;
   while (!current_joint_config) {
+    RCLCPP_INFO(this->get_logger(), "Waiting for joint config");
   }
 
   for (size_t i = 0; i < current_joint_config->position.size(); i++) {
@@ -1967,18 +1971,15 @@ void ImpedanceController::control() {
   double eps = this->get_parameter("eps").as_double();
   double task_gain = this->get_parameter("task_gain").as_double();
 
-  double orient_scale = 1.0;
-  Eigen::Vector<double, 6> KP_{
-      Kp, Kp, Kp, Kp * orient_scale, Kp * orient_scale, Kp * orient_scale};
+  Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp_rot, Kp_rot, Kp_rot};
   Eigen::Matrix<double, 6, 6> KP = Eigen::Matrix<double, 6, 6>::Identity();
   KP.diagonal() = KP_;
 
-  Eigen::Vector<double, 6> KD_{
-      Kd, Kd, Kd, Kd * orient_scale, Kd * orient_scale, Kd * orient_scale};
+  Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd_rot, Kd_rot, Kd_rot};
   Eigen::Matrix<double, 6, 6> KD = Eigen::Matrix<double, 6, 6>::Identity();
   KD.diagonal() = KD_;
 
-  Eigen::Vector<double, 6> MD_{Md, Md, Md, Md, Md, Md};
+  Eigen::Vector<double, 6> MD_{Md, Md, Md, Md_rot, Md_rot, Md_rot};
   Eigen::Matrix<double, 6, 6> MD = Eigen::Matrix<double, 6, 6>::Identity();
   MD.diagonal() = MD_;
   Eigen::Matrix<double, 6, 6> MD_1 = MD.inverse();
@@ -2004,7 +2005,8 @@ void ImpedanceController::control() {
       for (size_t i = 0; i < current_joint_config->position.size(); i++) {
         current_joints_speed[i] =
             franka::lowpassFilter(0.001, current_joint_config->velocity[i],
-                                  current_joints_speed[i], 100.0);
+                                  current_joints_speed[i], 5.0);
+        // current_joints_speed[i] = current_joint_config->velocity[i];
       }
     }
 
@@ -2026,14 +2028,14 @@ void ImpedanceController::control() {
     current_quat.normalize();
     current_quat = quaternionContinuity(current_quat, old_quaternion);
     old_quaternion = current_quat;
-    auto current_euler_zyz =
-        current_quat.toRotationMatrix().eulerAngles(2, 1, 2);
-    Eigen::Matrix<double, 3, 3> T = eul2jac_matrix(
-        current_euler_zyz(0), current_euler_zyz(1), current_euler_zyz(2));
-    Eigen::Matrix<double, 6, 6> T_A = jacob_transform_matrix(
-        current_euler_zyz(0), current_euler_zyz(1), current_euler_zyz(2));
-    Eigen::Matrix<double, 6, 6> T_A_1 = T_A.inverse();
-    Eigen::Matrix<double, 6, 7> analytical_jacobian = T_A_1 * jacobian;
+    // auto current_euler_zyz =
+    //     current_quat.toRotationMatrix().eulerAngles(2, 1, 2);
+    // Eigen::Matrix<double, 3, 3> T = eul2jac_matrix(
+    //     current_euler_zyz(0), current_euler_zyz(1), current_euler_zyz(2));
+    // Eigen::Matrix<double, 6, 6> T_A = jacob_transform_matrix(
+    //     current_euler_zyz(0), current_euler_zyz(1), current_euler_zyz(2));
+    // Eigen::Matrix<double, 6, 6> T_A_1 = T_A.inverse();
+    // Eigen::Matrix<double, 6, 7> analytical_jacobian = T_A_1 * jacobian;
 
     Eigen::Quaterniond desired_quat{};
     Eigen::Quaterniond error_quat{};
@@ -2047,8 +2049,8 @@ void ImpedanceController::control() {
       desired_quat.y() = desired_pose.orientation.y;
       desired_quat.z() = desired_pose.orientation.z;
       desired_quat.normalize();
-      auto zyz_desired_angles =
-          desired_quat.toRotationMatrix().eulerAngles(2, 1, 2);
+      // auto zyz_desired_angles =
+      //     desired_quat.toRotationMatrix().eulerAngles(2, 1, 2);
 
       error_quat = desired_quat * current_quat.inverse();
       error_quat.normalize();
@@ -2107,9 +2109,13 @@ void ImpedanceController::control() {
       error_twist = desired_twist_vec - current_twist;
     }
 
+    for (int i = 0; i < 7; i++) {
+      extern_tau_filtered[i] = franka::lowpassFilter(
+          0.001, extern_tau[i], extern_tau_filtered[i], 2.0);
+    }
+    h_e = jacobian_pinv.transpose() * extern_tau_filtered;
     {
       std::lock_guard<std::mutex> lock(desired_accel_mutex);
-      h_e = jacobian_pinv.transpose() * extern_tau;
       RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "h_e: " << h_e);
 
       // clang-format off
