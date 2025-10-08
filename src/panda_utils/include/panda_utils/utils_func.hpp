@@ -97,7 +97,8 @@ inline double distance(geometry_msgs::msg::TransformStamped tf) {
   return distance(p1, p2);
 }
 
-inline double distance(geometry_msgs::msg::TransformStamped tf1, geometry_msgs::msg::TransformStamped tf2) {
+inline double distance(geometry_msgs::msg::TransformStamped tf1,
+                       geometry_msgs::msg::TransformStamped tf2) {
   geometry_msgs::msg::Point p1;
   geometry_msgs::msg::Point p2;
 
@@ -172,3 +173,41 @@ get_jacobian(const std::array<double, 42> &jacob_raw) {
 }
 
 } // namespace geom_utils
+
+struct  decay_laws {
+  double lambda, beta, a, b, t_f;
+  double q_i, q_i_dot, q_i_ddot;
+  decay_laws(double t_f, double q_i, double q_i_dot, double q_i_ddot,
+             double lambda = 5, double beta = 10)
+      : lambda(lambda), beta(beta), t_f(t_f), q_i(q_i), q_i_dot(q_i_dot),
+        q_i_ddot(q_i_ddot) {
+    b = (q_i_ddot + q_i_dot * lambda) / (lambda - beta);
+    a = q_i_dot - b;
+  }
+  double exponential_decay_velocity(double t) {
+    if (t <= 0.0)
+      return q_i_dot;
+    if (t >= t_f)
+      return 0.0;
+
+    return a * exp(-lambda * t) + b * exp(-beta * t);
+  }
+  double exponential_decay_acceleration(double t) {
+    if (t <= 0.0)
+      return q_i_ddot;
+    if (t >= t_f)
+      return 0.0;
+
+    return -lambda * a * exp(-lambda * t) - beta * b * exp(-beta * t);
+  }
+
+  double exponential_decay_position(double t) {
+    if (t <= 0.0)
+      return q_i;
+    if (t > t_f)
+      return exponential_decay_position(t_f);
+
+    return q_i + (a / lambda) * (1 - exp(-lambda * t)) +
+           (b / beta) * (1 - exp(-beta * t));
+  }
+};

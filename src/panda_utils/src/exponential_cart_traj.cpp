@@ -26,94 +26,11 @@
 #include <rclcpp_action/types.hpp>
 #include <string>
 #include <thread>
+#include "panda_utils/utils_func.hpp"
 
 using StopTraj = panda_interfaces::action::StopTraj;
 using GoalHandleStopTraj = rclcpp_action::ServerGoalHandle<StopTraj>;
 using namespace std::chrono_literals;
-
-// struct decay_laws {
-//   double k, t_f, b, c;
-//   double q_i, q_i_dot, q_i_ddot;
-//   double q_f, q_f_dot, q_f_ddot;
-//   decay_laws(double t_f, double q_i, double q_i_dot, double q_i_ddot,
-//              double k = 5)
-//       : k(k), t_f(t_f), q_i(q_i), q_i_dot(q_i_dot), q_i_ddot(q_i_ddot) {
-//     b = -pow(k, 2) * q_i_dot - k * q_i_ddot;
-//     c = q_i_ddot + k * q_i_dot;
-//     q_f_ddot = 0.0;
-//     q_f_dot = 0.0;
-//     q_f = q_i - 2 * (q_i_dot / k) * exp(-k * t_f) +
-//           (q_i_dot / k) * (1 - k * t_f * exp(-k * t_f)) +
-//           (q_i_ddot / pow(k, 2)) -
-//           (q_i_ddot / k) * (1 + k * t_f) * exp(-k * t_f);
-//   }
-//
-//   double exponential_decay_position(double t) {
-//     if (t <= 0.0)
-//       return q_i;
-//     if (t >= t_f)
-//       return q_f;
-//
-//     return q_i + (q_i_dot / k) * (1 - exp(-k * t)) +
-//            (c / pow(k, 2)) * (1 - exp(-k * t_f) * (1 + k * t));
-//   }
-//
-//   double exponential_decay_velocity(double t) {
-//     if (t <= 0.0)
-//       return q_i_dot;
-//     if (t >= t_f)
-//       return q_f_dot;
-//
-//     return exp(-k * t) * (q_i_dot + c * t);
-//   }
-//
-//   double exponential_decay_acceleration(double t) {
-//     if (t <= 0.0)
-//       return q_i_ddot;
-//     if (t >= t_f)
-//       return q_f_ddot;
-//
-//     return (q_i_ddot + b * t) * exp(-k * t);
-//   }
-// };
-
-struct decay_laws {
-  double lambda, beta, a, b, t_f;
-  double q_i, q_i_dot, q_i_ddot;
-  decay_laws(double t_f, double q_i, double q_i_dot, double q_i_ddot,
-             double lambda = 5, double beta = 10)
-      : lambda(lambda), beta(beta), t_f(t_f), q_i(q_i), q_i_dot(q_i_dot),
-        q_i_ddot(q_i_ddot) {
-    b = (q_i_ddot + q_i_dot * lambda) / (lambda - beta);
-    a = q_i_dot - b;
-  }
-  double exponential_decay_velocity(double t) {
-    if (t <= 0.0)
-      return q_i_dot;
-    if (t >= t_f)
-      return 0.0;
-
-    return a * exp(-lambda * t) + b * exp(-beta * t);
-  }
-  double exponential_decay_acceleration(double t) {
-    if (t <= 0.0)
-      return q_i_ddot;
-    if (t >= t_f)
-      return 0.0;
-
-    return -lambda * a * exp(-lambda * t) - beta * b * exp(-beta * t);
-  }
-
-  double exponential_decay_position(double t) {
-    if (t <= 0.0)
-      return q_i;
-    if (t > t_f)
-      return exponential_decay_position(t_f);
-
-    return q_i + (a / lambda) * (1 - exp(-lambda * t)) +
-           (b / beta) * (1 - exp(-beta * t));
-  }
-};
 
 class StopTrajectory : public rclcpp::Node {
 

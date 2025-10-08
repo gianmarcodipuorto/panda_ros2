@@ -5,6 +5,7 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_utils/constants.hpp"
+#include "panda_utils/utils_func.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "realtime_tools/realtime_tools/realtime_helpers.hpp"
@@ -109,17 +110,128 @@ public:
       return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     };
 
-    auto handle_cancel =
-        [this](const std::shared_ptr<rclcpp_action::ServerGoalHandle<CartTraj>>
-                   goal_handle) {
-          RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
-          // CartTraj::Result::SharedPtr result =
-          //     std::make_shared<CartTraj::Result>();
-          // result->completed = false;
-          // goal_handle->canceled(result);
-          (void)goal_handle;
-          return rclcpp_action::CancelResponse::ACCEPT;
-        };
+    auto handle_cancel = [this](const std::shared_ptr<
+                                rclcpp_action::ServerGoalHandle<CartTraj>>
+                                    goal_handle) {
+      RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
+      // CartTraj::Result::SharedPtr result =
+      //     std::make_shared<CartTraj::Result>();
+      // result->completed = false;
+      // goal_handle->canceled(result);
+      (void)goal_handle;
+      std::thread{[this]() {
+        RCLCPP_INFO(this->get_logger(), "Running exponential traj");
+        std::map<int, decay_laws> translation_laws;
+        std::map<int, decay_laws> orientation_laws;
+        geometry_msgs::msg::Pose initial_pose = cmd_cartesian.pose;
+        geometry_msgs::msg::Twist initial_velocity = cmd_cartesian.twist;
+        geometry_msgs::msg::Accel initial_acceleration = cmd_cartesian.accel;
+
+        translation_laws.emplace(0, decay_laws(1.5, initial_pose.position.x,
+                                               initial_velocity.linear.x,
+                                               initial_acceleration.linear.x));
+        translation_laws.emplace(1, decay_laws(1.5, initial_pose.position.y,
+                                               initial_velocity.linear.y,
+                                               initial_acceleration.linear.y));
+        translation_laws.emplace(2, decay_laws(1.5, initial_pose.position.z,
+                                               initial_velocity.linear.z,
+                                               initial_acceleration.linear.z));
+
+        orientation_laws.emplace(0, decay_laws(1.5, 0.0,
+                                               initial_velocity.angular.x,
+                                               initial_acceleration.angular.x));
+        orientation_laws.emplace(1, decay_laws(1.5, 0.0,
+                                               initial_velocity.angular.y,
+                                               initial_acceleration.angular.y));
+        orientation_laws.emplace(2, decay_laws(1.5, 0.0,
+                                               initial_velocity.angular.z,
+                                               initial_acceleration.angular.z));
+        Eigen::Quaterniond current_quat{
+            initial_pose.orientation.w, initial_pose.orientation.x,
+            initial_pose.orientation.y, initial_pose.orientation.z};
+        current_quat.normalize();
+        rclcpp::Time t0 = this->now();
+        rclcpp::Duration t = rclcpp::Duration::from_seconds(0.0);
+        rclcpp::Rate loop_rate(loop_rate_freq, this->get_clock());
+        while (rclcpp::ok() && t.seconds() < 1.5) {
+          t = this->get_clock()->now() - t0;
+          RCLCPP_DEBUG(this->get_logger(), "Time now %f", t.seconds());
+
+          RCLCPP_DEBUG(this->get_logger(), "Uploading next pose");
+
+          // Calculating position
+          cmd_cartesian.pose.position.x =
+              translation_laws.at(0).exponential_decay_position(t.seconds());
+          cmd_cartesian.pose.position.y =
+              translation_laws.at(1).exponential_decay_position(t.seconds());
+          cmd_cartesian.pose.position.z =
+              translation_laws.at(2).exponential_decay_position(t.seconds());
+
+          cmd_cartesian.twist.linear.x =
+              translation_laws.at(0).exponential_decay_velocity(t.seconds());
+          cmd_cartesian.twist.linear.y =
+              translation_laws.at(1).exponential_decay_velocity(t.seconds());
+          cmd_cartesian.twist.linear.z =
+              translation_laws.at(2).exponential_decay_velocity(t.seconds());
+
+          cmd_cartesian.accel.linear.x =
+              translation_laws.at(0).exponential_decay_acceleration(
+                  t.seconds());
+          cmd_cartesian.accel.linear.y =
+              translation_laws.at(1).exponential_decay_acceleration(
+                  t.seconds());
+          cmd_cartesian.accel.linear.z =
+              translation_laws.at(2).exponential_decay_acceleration(
+                  t.seconds());
+
+          // Orientation
+          // For the orientation we apply the decay laws to the twist and the
+          // accel and we calculate a theta angle as the integral of the twist:
+          // based on this theta we calculate a delta quaternion to apply to the
+          // current quaternion
+          cmd_cartesian.twist.angular.x =
+              orientation_laws.at(0).exponential_decay_velocity(t.seconds());
+          cmd_cartesian.twist.angular.y =
+              orientation_laws.at(1).exponential_decay_velocity(t.seconds());
+          cmd_cartesian.twist.angular.z =
+              orientation_laws.at(2).exponential_decay_velocity(t.seconds());
+
+          Eigen::Quaterniond delta_quat{
+              1.0, 0.5 * cmd_cartesian.twist.angular.x / loop_rate_freq,
+              0.5 * cmd_cartesian.twist.angular.y / loop_rate_freq,
+              0.5 * cmd_cartesian.twist.angular.z / loop_rate_freq};
+          delta_quat.normalize();
+
+          current_quat = current_quat * delta_quat;
+          current_quat.normalize();
+
+          cmd_cartesian.pose.orientation.x = current_quat.x();
+          cmd_cartesian.pose.orientation.y = current_quat.y();
+          cmd_cartesian.pose.orientation.z = current_quat.z();
+          cmd_cartesian.pose.orientation.w = current_quat.w();
+
+          cmd_cartesian.accel.angular.x =
+              orientation_laws.at(0).exponential_decay_acceleration(
+                  t.seconds());
+          cmd_cartesian.accel.angular.y =
+              orientation_laws.at(1).exponential_decay_acceleration(
+                  t.seconds());
+          cmd_cartesian.accel.angular.z =
+              orientation_laws.at(2).exponential_decay_acceleration(
+                  t.seconds());
+
+          RCLCPP_DEBUG_ONCE(this->get_logger(), "Publish command");
+
+          cartesian_cmd_pub->try_publish(cmd_cartesian);
+
+          // Sleep
+          //
+          loop_rate.sleep();
+        }
+        RCLCPP_INFO(this->get_logger(), "Finished running exponential traj");
+      }}.detach();
+      return rclcpp_action::CancelResponse::ACCEPT;
+    };
 
     auto handle_accepted =
         [this](const std::shared_ptr<GoalHandleCartMove> goal_handle) {
@@ -134,36 +246,6 @@ public:
         this, panda_interface_names::panda_cart_move_action_name, handle_goal,
         handle_cancel, handle_accepted);
 
-    // cmd_pose_pub = std::make_shared<
-    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Pose>>(
-    //     this->create_publisher<geometry_msgs::msg::Pose>(
-    //         panda_interface_names::panda_pose_cmd_topic_name,
-    //         panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
-    //
-    // cmd_twist_pub = std::make_shared<
-    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Twist>>(
-    //     this->create_publisher<geometry_msgs::msg::Twist>(
-    //         panda_interface_names::panda_twist_cmd_topic_name,
-    //         panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
-    //
-    // cmd_accel_pub = std::make_shared<
-    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Accel>>(
-    //     this->create_publisher<geometry_msgs::msg::Accel>(
-    //         panda_interface_names::panda_accel_cmd_topic_name,
-    //         panda_interface_names::CONTROLLER_SUBSCRIBER_QOS()));
-
-    cmd_pose_pub = this->create_publisher<geometry_msgs::msg::Pose>(
-        panda_interface_names::panda_pose_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS());
-
-    cmd_twist_pub = this->create_publisher<geometry_msgs::msg::Twist>(
-        panda_interface_names::panda_twist_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS());
-
-    cmd_accel_pub = this->create_publisher<geometry_msgs::msg::Accel>(
-        panda_interface_names::panda_accel_cmd_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS());
-
     cartesian_cmd_pub = std::make_shared<realtime_tools::RealtimePublisher<
         panda_interfaces::msg::CartesianCommand>>(
         this->create_publisher<panda_interfaces::msg::CartesianCommand>(
@@ -172,19 +254,11 @@ public:
   }
 
 private:
-  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Pose>
-  //     cmd_pose_pub;
-  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Twist>
-  //     cmd_twist_pub;
-  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Accel>
-  //     cmd_accel_pub;
 
   realtime_tools::RealtimePublisherSharedPtr<
       panda_interfaces::msg::CartesianCommand>
       cartesian_cmd_pub;
-  rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr cmd_pose_pub;
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_twist_pub;
-  rclcpp::Publisher<geometry_msgs::msg::Accel>::SharedPtr cmd_accel_pub;
+    panda_interfaces::msg::CartesianCommand cmd_cartesian;
 
   rclcpp_action::Server<CartTraj>::SharedPtr action_traj_server;
 
@@ -252,7 +326,6 @@ private:
     geometry_msgs::msg::Pose cmd_pose;
     geometry_msgs::msg::Twist cmd_twist;
     geometry_msgs::msg::Accel cmd_accel;
-    panda_interfaces::msg::CartesianCommand cmd_cartesian;
 
     RCLCPP_DEBUG(this->get_logger(), "Entering while");
     while (rclcpp::ok() && t < traj_duration) {
@@ -333,10 +406,6 @@ private:
       cmd_accel.angular.y = angular_accel.y();
       cmd_accel.angular.z = angular_accel.z();
 
-      // cmd_accel.angular.x = 0.0;
-      // cmd_accel.angular.y = 0.0;
-      // cmd_accel.angular.z = 0.0;
-
       RCLCPP_DEBUG_ONCE(this->get_logger(), "Assigning time left");
       feedback->time_left = (traj_duration - t).seconds();
 
@@ -345,14 +414,6 @@ private:
 
       RCLCPP_DEBUG_ONCE(this->get_logger(), "Publish command");
 
-      // cmd_pose_pub->tryPublish(cmd_pose);
-      // cmd_pose_pub->publish(cmd_pose);
-      // if (!goal->only_position) {
-      //   // cmd_twist_pub->tryPublish(cmd_twist);
-      //   // cmd_accel_pub->tryPublish(cmd_accel);
-      //   cmd_twist_pub->publish(cmd_twist);
-      //   cmd_accel_pub->publish(cmd_accel);
-      // }
 
       cmd_cartesian.pose = cmd_pose;
       cmd_cartesian.twist = cmd_twist;

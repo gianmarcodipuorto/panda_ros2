@@ -267,7 +267,7 @@ public:
         home_pose_.orientation.y, home_pose_.orientation.z};
     triangle_task_goal_ = generate_triangle_task(
         home_pose_.position.x, home_pose_.position.y, home_pose_.position.z,
-        0.1, 0.2, triangle_orient.normalized(), 12.0);
+        0.1, 0.2, triangle_orient.normalized(), 15.0);
 
     stop_traj_goal_.total_time = 1.5;
   }
@@ -525,44 +525,43 @@ private:
             // read pose
 
             cancel_actions();
-            rclcpp::sleep_for(1s);
 
-            RCLCPP_INFO(this->get_logger(),
-                        "Sending velocity and acceleration to 0 exponentially");
-            auto future = stop_traj_action_client_->async_send_goal(
-                stop_traj_goal_, stop_traj_options_);
-            auto fut_return = rclcpp::spin_until_future_complete(
-                confirmation_node_, future, 500ms);
-            switch (fut_return) {
-            case rclcpp::FutureReturnCode::SUCCESS: {
-              auto handle = future.get();
-              if (handle) {
-                stop_traj_handle_ = handle;
-                RCLCPP_INFO(this->get_logger(), "Stop trajectory accepted");
-              } else {
-                RCLCPP_INFO(this->get_logger(), "Stop trajectory refused");
-                break;
-              }
-              break;
-            }
-            case rclcpp::FutureReturnCode::INTERRUPTED: {
-              RCLCPP_ERROR(this->get_logger(), "Stop trajectory interrupted");
-              break;
-            }
-            case rclcpp::FutureReturnCode::TIMEOUT: {
-              RCLCPP_ERROR(this->get_logger(), "Stop trajectory went timeout");
-              break;
-            } break;
-            };
-
-            while (stop_traj_handle_.has_value()) {
-              RCLCPP_INFO(this->get_logger(),
-                          "Waiting robot to reach 0 velocity and acceleration");
-              if (!rclcpp::ok()) {
-                break;
-              }
-              rclcpp::sleep_for(2s);
-            }
+            // RCLCPP_INFO(this->get_logger(),
+            //             "Sending velocity and acceleration to 0 exponentially");
+            // auto future = stop_traj_action_client_->async_send_goal(
+            //     stop_traj_goal_, stop_traj_options_);
+            // auto fut_return = rclcpp::spin_until_future_complete(
+            //     confirmation_node_, future, 500ms);
+            // switch (fut_return) {
+            // case rclcpp::FutureReturnCode::SUCCESS: {
+            //   auto handle = future.get();
+            //   if (handle) {
+            //     stop_traj_handle_ = handle;
+            //     RCLCPP_INFO(this->get_logger(), "Stop trajectory accepted");
+            //   } else {
+            //     RCLCPP_INFO(this->get_logger(), "Stop trajectory refused");
+            //     break;
+            //   }
+            //   break;
+            // }
+            // case rclcpp::FutureReturnCode::INTERRUPTED: {
+            //   RCLCPP_ERROR(this->get_logger(), "Stop trajectory interrupted");
+            //   break;
+            // }
+            // case rclcpp::FutureReturnCode::TIMEOUT: {
+            //   RCLCPP_ERROR(this->get_logger(), "Stop trajectory went timeout");
+            //   break;
+            // } break;
+            // };
+            //
+            // while (stop_traj_handle_.has_value()) {
+            //   RCLCPP_INFO(this->get_logger(),
+            //               "Waiting robot to reach 0 velocity and acceleration");
+            //   if (!rclcpp::ok()) {
+            //     break;
+            //   }
+            //   rclcpp::sleep_for(2s);
+            // }
 
             // Check if action has been interrupted from the human entering
             // the area
@@ -667,47 +666,47 @@ private:
       threads_run_.store(true);
       resp->set__success(true);
     } else if (!req->data && threads_run_.load()) {
-      cancel_actions();
       threads_run_.store(false);
       safe_keeper_thread_.join();
       demo_thread_.join();
+      cancel_actions();
 
-      RCLCPP_INFO(this->get_logger(),
-                  "Sending velocity and acceleration to 0 exponentially");
-      auto future = stop_traj_action_client_->async_send_goal(
-          stop_traj_goal_, stop_traj_options_);
-      auto fut_return =
-          rclcpp::spin_until_future_complete(confirmation_node_, future, 500ms);
-      switch (fut_return) {
-      case rclcpp::FutureReturnCode::SUCCESS: {
-        auto handle = future.get();
-        if (handle) {
-          stop_traj_handle_ = handle;
-          RCLCPP_INFO(this->get_logger(), "Stop trajectory accepted");
-        } else {
-          RCLCPP_INFO(this->get_logger(), "Stop trajectory refused");
-          break;
-        }
-        break;
-      }
-      case rclcpp::FutureReturnCode::INTERRUPTED: {
-        RCLCPP_ERROR(this->get_logger(), "Stop trajectory interrupted");
-        break;
-      }
-      case rclcpp::FutureReturnCode::TIMEOUT: {
-        RCLCPP_ERROR(this->get_logger(), "Stop trajectory went timeout");
-        break;
-      } break;
-      };
-
-      while (stop_traj_handle_.has_value()) {
-        RCLCPP_INFO(this->get_logger(),
-                    "Waiting robot to reach 0 velocity and acceleration");
-        if (!rclcpp::ok()) {
-          break;
-        }
-        rclcpp::sleep_for(2s);
-      }
+      // RCLCPP_INFO(this->get_logger(),
+      //             "Sending velocity and acceleration to 0 exponentially");
+      // auto future = stop_traj_action_client_->async_send_goal(
+      //     stop_traj_goal_, stop_traj_options_);
+      // auto fut_return =
+      //     rclcpp::spin_until_future_complete(confirmation_node_, future, 500ms);
+      // switch (fut_return) {
+      // case rclcpp::FutureReturnCode::SUCCESS: {
+      //   auto handle = future.get();
+      //   if (handle) {
+      //     stop_traj_handle_ = handle;
+      //     RCLCPP_INFO(this->get_logger(), "Stop trajectory accepted");
+      //   } else {
+      //     RCLCPP_INFO(this->get_logger(), "Stop trajectory refused");
+      //     break;
+      //   }
+      //   break;
+      // }
+      // case rclcpp::FutureReturnCode::INTERRUPTED: {
+      //   RCLCPP_ERROR(this->get_logger(), "Stop trajectory interrupted");
+      //   break;
+      // }
+      // case rclcpp::FutureReturnCode::TIMEOUT: {
+      //   RCLCPP_ERROR(this->get_logger(), "Stop trajectory went timeout");
+      //   break;
+      // } break;
+      // };
+      //
+      // while (stop_traj_handle_.has_value()) {
+      //   RCLCPP_INFO(this->get_logger(),
+      //               "Waiting robot to reach 0 velocity and acceleration");
+      //   if (!rclcpp::ok()) {
+      //     break;
+      //   }
+      //   rclcpp::sleep_for(2s);
+      // }
       resp->set__success(true);
     } else {
       RCLCPP_ERROR(this->get_logger(), "Could not stop/start the demo thread");

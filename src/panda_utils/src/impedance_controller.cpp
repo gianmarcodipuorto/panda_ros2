@@ -546,12 +546,13 @@ public:
               if (t > 1.0) {
                 t = 1.0;
               }
-              KD = initial_KD * 0.4 * (1.0 - t);
+              KD = (initial_KD * 0.4) * t + initial_KD * (1.0 - t);
               KP = initial_KP * exp(-9.0 * t);
               rclcpp::sleep_for(5ms);
             }
-            RCLCPP_INFO_STREAM(this->get_logger(), "KP = " << KP);
             KP = KP * 0.0;
+            RCLCPP_INFO_STREAM(this->get_logger(), "KP = " << KP);
+            RCLCPP_INFO_STREAM(this->get_logger(), "KD = " << KD);
             RCLCPP_INFO(this->get_logger(), "KP = 0");
             compliance_mode.store(true);
             response->result = true;
@@ -1348,31 +1349,6 @@ public:
             rclcpp::shutdown();
           }
           // clang-format on
-          auto start = this->now();
-          Eigen::Vector<double, 6> biased_he{};
-          int iters = 0;
-          franka::RobotState state;
-          while ((this->now() - start).seconds() < 1.0) {
-            state = panda_franka->readOnce();
-            jacobian = get_jacobian(panda_franka_model->zeroJacobian(
-                franka::Frame::kFlange, state));
-            Eigen::Matrix<double, 7, 6> jacobian_transposed =
-                jacobian.transpose();
-            Eigen::Map<const Eigen::Vector<double, 7>> tau_ext_measured(
-                state.tau_ext_hat_filtered.data());
-            h_e_measured =
-                jacobian_transposed.transpose() *
-                (jacobian_transposed * jacobian_transposed.transpose() +
-                 1e-5 * 1e-5 * Eigen::Matrix<double, 7, 7>::Identity())
-                    .inverse() *
-                tau_ext_measured;
-            biased_he += h_e_measured;
-            iters++;
-            std::this_thread::sleep_for(10ms);
-          }
-          biased_he = biased_he / iters;
-          this->initial_h_e = biased_he;
-          RCLCPP_INFO_STREAM(this->get_logger(), "Biased he: " << biased_he);
           panda_franka->control(robot_control_callback);
 
         } catch (const franka::Exception &ex) {
@@ -1672,8 +1648,11 @@ private:
     Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp_rot, Kp_rot, Kp_rot};
     Eigen::Matrix<double, 6, 6> final_KP =
         Eigen::Matrix<double, 6, 6>::Identity();
-    KP = Eigen::Matrix<double, 6, 6>::Zero();
     final_KP.diagonal() = KP_;
+    if (final_KP == KP) {
+      return;
+    }
+    KP = Eigen::Matrix<double, 6, 6>::Zero();
     auto start = this->now();
     while ((this->now() - start).seconds() < 1.0) {
       auto t = (this->now() - start).seconds();
@@ -1690,8 +1669,11 @@ private:
     Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd_rot, Kd_rot, Kd_rot};
     Eigen::Matrix<double, 6, 6> final_KD =
         Eigen::Matrix<double, 6, 6>::Identity();
-    KD = Eigen::Matrix<double, 6, 6>::Zero();
     final_KD.diagonal() = KD_;
+    if (final_KD == KD) {
+      return;
+    }
+    KD = Eigen::Matrix<double, 6, 6>::Zero();
     auto start = this->now();
     while ((this->now() - start).seconds() < 1.0) {
       auto t = (this->now() - start).seconds();
