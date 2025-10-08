@@ -5,7 +5,8 @@
 #include <QFont>
 #include <QLabel>
 #include <QPalette>
-#include <QPushButton> // Added for the on/off button
+#include <QPushButton> // Added for the on/off and script buttons
+#include <QProcess>    // Added for executing bash scripts
 #include <QString>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -57,6 +58,13 @@ public:
     top_bar_layout->addWidget(on_off_button_);
     connect(on_off_button_, &QPushButton::clicked, this,
             &ColorWidget::toggleButtonState);
+
+    // Add the new script execution button
+    script_button_ = new QPushButton("Activate impedance controller", top_bar_widget_);
+    script_button_->setFont(font_button); // Use the same font size
+    top_bar_layout->addWidget(script_button_);
+    connect(script_button_, &QPushButton::clicked, this,
+            &ColorWidget::executeBashScript);
 
     // Set top bar background to white
     QPalette pal_top = top_bar_widget_->palette();
@@ -135,8 +143,11 @@ private:
 
   QWidget *top_bar_widget_;    // New widget for the top bar
   QWidget *color_area_widget_; // New widget for the color changing area
-  QPushButton *on_off_button_; // New button for on/off functionality
+    QPushButton *on_off_button_;    // New button for on/off functionality
+    QPushButton *script_button_;    // New button for script execution
   QPalette button_default_palette_;
+
+    bool script_toggle_ = false; // To alternate between scripts
 
   std::string state_topic_name; // Keep these for constructor initialization
   std::string
@@ -145,6 +156,7 @@ private:
 
 private slots:
   void toggleButtonState();
+    void executeBashScript(); // New slot for script execution
 };
 
 // Slot implementation for the on/off button
@@ -202,6 +214,30 @@ void ColorWidget::toggleButtonState() {
       }
     }}.detach();
   }
+}
+
+// Slot implementation for the bash script button
+void ColorWidget::executeBashScript() {
+  // Define your bash script paths here
+  const QString script1_path =
+      "./start_controller.sh"; // Replace with your first script path
+  const QString script2_path =
+      "./stop_controller.sh"; // Replace with your second script path
+
+  if (!script_toggle_) {
+    // Execute Script 1
+    QProcess::startDetached("/bin/bash", QStringList() << script1_path);
+    script_button_->setText("Deactivate impedance controller");
+    RCLCPP_INFO(rclcpp::get_logger("color_widget_node"), "Executing script: %s",
+                script1_path.toStdString().c_str());
+  } else {
+    // Execute Script 2
+    QProcess::startDetached("/bin/bash", QStringList() << script2_path);
+    script_button_->setText("Activate impedance controller");
+    RCLCPP_INFO(rclcpp::get_logger("color_widget_node"), "Executing script: %s",
+                script2_path.toStdString().c_str());
+  }
+  script_toggle_ = !script_toggle_; // Toggle for the next click
 }
 
 int main(int argc, char **argv) { // Original main function context

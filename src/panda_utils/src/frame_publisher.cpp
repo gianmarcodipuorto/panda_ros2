@@ -135,8 +135,6 @@ private:
       prev_abs_tf = current_abs_tf;
       prev_frame = frame_ids_to_publish_[i + 1];
     }
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 3000.0,
-                         "Published %zu frames.", poses_to_publish_.size());
   }
 };
 

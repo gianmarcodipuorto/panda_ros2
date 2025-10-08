@@ -144,11 +144,6 @@ private:
               robot_links_body_keypoints_tfs[robot_frame_name + "_to_" +
                                              keypoint_frame_name] = tf;
             } catch (const tf2::TransformException &ex) {
-              RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(),
-                                          *this->get_clock(), 10000.0,
-                                          "Not found transform between "
-                                          "link and body part: "
-                                              << ex.what());
             }
           }
         } catch (const tf2::TransformException &ex) {
@@ -187,7 +182,7 @@ private:
       // Normalize the time according to limit
       presence_state_.normalize_time();
       if (human_in_area &&
-          presence_state_.time_present.seconds() >= presence_state_.MAX_TIME &&
+          presence_state_.time_present.seconds() >= presence_state_.MIN_TIME &&
           !presence_state_.human_present) {
         // If human is inside by max time at least then he's
         // surely in area

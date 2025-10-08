@@ -95,6 +95,7 @@ using panda_interfaces::msg::JointsEffort;
 using panda_interfaces::msg::JointsPos;
 using panda_interfaces::msg::JointTorqueMeasureStamped;
 using sensor_msgs::msg::JointState;
+using namespace std::chrono_literals;
 
 auto DEFAULT_URDF_PATH =
     ament_index_cpp::get_package_share_directory("panda_world") +
@@ -528,22 +529,26 @@ public:
                    request,
                panda_interfaces::srv::SetComplianceMode_Response::SharedPtr
                    response) {
+          if (current_joints_speed.norm() >= 1e-2) {
+            response->result = false;
+            RCLCPP_ERROR(this->get_logger(),
+                         "Speed too high: can't set compliance mode");
+            return;
+          }
           if (request->cmd) {
-            if (current_joints_speed.norm() >= 1e-2) {
-              response->result = false;
-              RCLCPP_ERROR(this->get_logger(),
-                           "Speed too high: can't set compliance mode");
-              return;
-            }
 
             RCLCPP_INFO(this->get_logger(), "Decreasing KP");
             auto start = this->now();
+            Eigen::Matrix<double, 6, 6> initial_KP = KP;
+            Eigen::Matrix<double, 6, 6> initial_KD = KD;
             while ((this->now() - start).seconds() < 1.0) {
               auto t = (this->now() - start).seconds();
-              KP = KP * exp(-6.0 * t);
-              RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(),
-                                          *this->get_clock(), 200.0,
-                                          "KP = " << KP);
+              if (t > 1.0) {
+                t = 1.0;
+              }
+              KD = initial_KD * 0.4 * (1.0 - t);
+              KP = initial_KP * exp(-9.0 * t);
+              rclcpp::sleep_for(5ms);
             }
             RCLCPP_INFO_STREAM(this->get_logger(), "KP = " << KP);
             KP = KP * 0.0;
@@ -578,6 +583,7 @@ public:
               init_cartesian_cmd(current_joints_config_vec);
             }
             set_kp();
+            set_kd();
             compliance_mode.store(false);
             response->result = true;
             RCLCPP_INFO(this->get_logger(), "Unset controller compliance mode");
@@ -684,9 +690,7 @@ public:
 
       set_kp();
 
-      Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd_rot, Kd_rot, Kd_rot};
-      Eigen::Matrix<double, 6, 6> KD = Eigen::Matrix<double, 6, 6>::Identity();
-      KD.diagonal() = KD_;
+      set_kd();
 
       Eigen::Vector<double, 6> MD_{Md, Md, Md, Md_rot, Md_rot, Md_rot};
       Eigen::Matrix<double, 6, 6> MD = Eigen::Matrix<double, 6, 6>::Identity();
@@ -739,7 +743,7 @@ public:
       joint_state_to_pub.name = std::vector<std::string>{
           "joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"};
 
-      robot_control_callback = [this, KD, MD, MD_1, k_max, eps, get_jacob](
+      robot_control_callback = [this, MD, MD_1, k_max, eps, get_jacob](
                                    const franka::RobotState &state,
                                    franka::Duration dt) -> franka::Torques {
         if (!(start_flag.load() && rclcpp::ok())) {
@@ -763,7 +767,7 @@ public:
         if (dt.toSec() != 0.0) {
           for (int i = 0; i < 7; i++) {
             current_joints_speed[i] = franka::lowpassFilter(
-                dt.toSec(), state.dq[i], current_joints_speed[i], 20.0);
+                dt.toSec(), state.dq[i], current_joints_speed[i], 30.0);
           }
 
         } else {
@@ -824,9 +828,6 @@ public:
           error_quat = desired_quat * current_quat.inverse();
           error_quat.normalize();
           error_angle_axis = Eigen::AngleAxisd{error_quat};
-          RCLCPP_INFO_STREAM_THROTTLE(
-              this->get_logger(), *this->get_clock(), 1000.0,
-              "Error angle theta: " << error_angle_axis.angle() * 180.0 / M_PI);
 
           error_pose_vec(0) = desired_pose.position.x - current_pose.position.x;
           error_pose_vec(1) = desired_pose.position.y - current_pose.position.y;
@@ -866,14 +867,14 @@ public:
         } else {
           for (int i = 0; i < 6; i++) {
             extern_tau[i] = franka::lowpassFilter(
-                dt.toSec(), tau_ext_measured[i], extern_tau[i], 5.0);
+                dt.toSec(), tau_ext_measured[i], extern_tau[i], 30.0);
           }
         }
 
+        Eigen::Vector<double, 7> tau_ext = extern_tau;
         if (dt.toSec() == 0.0) {
           h_e = h_e.Zero();
         } else {
-          Eigen::Vector<double, 7> tau_ext = extern_tau;
           if (compliance_mode.load() && last_joint_contact_frame.has_value()) {
             int index = 0;
             switch (last_joint_contact_frame.value()) {
@@ -978,9 +979,9 @@ public:
           // clang-format on
         }
 
-        Eigen::Vector<double, 7> control_input_vec = mass_matrix * y +
-                                                     coriolis + extern_tau -
-                                                     8.0 * current_joints_speed;
+        Eigen::Vector<double, 7> control_input_vec =
+            mass_matrix * y + coriolis + extern_tau -
+            10.0 * current_joints_speed;
 
         // Clamp tau
         clamp_control(control_input_vec);
@@ -1000,7 +1001,9 @@ public:
                 RCLCPP_INFO_STREAM_ONCE(this->get_logger(),
                                         "Running safety check: effort limit");
                 RCLCPP_ERROR_STREAM(this->get_logger(),
-                                    "Torque abs value over limit (50%)");
+                                    "Torque abs value over limit ("
+                                        << percentage_effort_safe_limit * 10.0
+                                        << "%)");
                 panda_franka->stop();
                 start_flag.store(false);
                 return franka::MotionFinished(franka::Torques(state.tau_J_d));
@@ -1375,8 +1378,14 @@ public:
         } catch (const franka::Exception &ex) {
 
           start_flag.store(false);
+          if (panda_franka.has_value()) {
+            try {
+              panda_franka->stop();
+            } catch (const franka::Exception &ex) {
+              RCLCPP_ERROR_STREAM(this->get_logger(), ex.what());
+            }
+          }
           RCLCPP_ERROR_STREAM(this->get_logger(), ex.what());
-          rclcpp::shutdown();
         }
       }};
 
@@ -1645,6 +1654,7 @@ private:
   double Kd_rot{};
   double Md_rot{};
   Eigen::Matrix<double, 6, 6> KP{};
+  Eigen::Matrix<double, 6, 6> KD{};
   double joint_speed_safe_limit{};
   double percentage_effort_safe_limit{};
   double error_pose_norm_safe_limit{};
@@ -1658,9 +1668,40 @@ private:
   human_presence::HumanPresentState presence_state;
 
   void set_kp() {
+
     Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp_rot, Kp_rot, Kp_rot};
-    KP = Eigen::Matrix<double, 6, 6>::Identity();
-    KP.diagonal() = KP_;
+    Eigen::Matrix<double, 6, 6> final_KP =
+        Eigen::Matrix<double, 6, 6>::Identity();
+    KP = Eigen::Matrix<double, 6, 6>::Zero();
+    final_KP.diagonal() = KP_;
+    auto start = this->now();
+    while ((this->now() - start).seconds() < 1.0) {
+      auto t = (this->now() - start).seconds();
+      if (t > 1.0) {
+        t = 1.0;
+      }
+      KP = final_KP * t;
+      rclcpp::sleep_for(5ms);
+    }
+    RCLCPP_INFO(this->get_logger(), "Set KP");
+  }
+
+  void set_kd() {
+    Eigen::Vector<double, 6> KD_{Kd, Kd, Kd, Kd_rot, Kd_rot, Kd_rot};
+    Eigen::Matrix<double, 6, 6> final_KD =
+        Eigen::Matrix<double, 6, 6>::Identity();
+    KD = Eigen::Matrix<double, 6, 6>::Zero();
+    final_KD.diagonal() = KD_;
+    auto start = this->now();
+    while ((this->now() - start).seconds() < 1.0) {
+      auto t = (this->now() - start).seconds();
+      if (t > 1.0) {
+        t = 1.0;
+      }
+      KD = final_KD * t;
+      rclcpp::sleep_for(5ms);
+    }
+    RCLCPP_INFO(this->get_logger(), "Set KD");
   }
 
   Eigen::Vector<double, 7>

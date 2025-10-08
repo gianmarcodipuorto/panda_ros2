@@ -260,14 +260,14 @@ public:
     stop_traj_options_.result_callback = stop_result_callback;
 
     home_goal_.desired_pose = home_pose_;
-    home_goal_.total_time = 3.0;
+    home_goal_.total_time = 8.0;
 
     Eigen::Quaterniond triangle_orient{
         home_pose_.orientation.w, home_pose_.orientation.x,
         home_pose_.orientation.y, home_pose_.orientation.z};
     triangle_task_goal_ = generate_triangle_task(
         home_pose_.position.x, home_pose_.position.y, home_pose_.position.z,
-        0.1, 0.3, triangle_orient.normalized(), 9.0);
+        0.1, 0.2, triangle_orient.normalized(), 12.0);
 
     stop_traj_goal_.total_time = 1.5;
   }
@@ -473,6 +473,8 @@ private:
 
             update_state();
 
+            rclcpp::sleep_for(2s);
+
             if (!loop_cartesian_traj_handle_.has_value()) {
               auto future = loop_traj_action_client_->async_send_goal(
                   triangle_task_goal_, loop_cart_traj_options_);
@@ -522,6 +524,9 @@ private:
             // Issue exponential decay of velocity and acceleration at current
             // read pose
 
+            cancel_actions();
+            rclcpp::sleep_for(1s);
+
             RCLCPP_INFO(this->get_logger(),
                         "Sending velocity and acceleration to 0 exponentially");
             auto future = stop_traj_action_client_->async_send_goal(
@@ -568,9 +573,9 @@ private:
 
             RCLCPP_INFO(this->get_logger(),
                         "Transitioning to compliance mode in seconds");
-            rclcpp::sleep_for(3s);
 
             do {
+              rclcpp::sleep_for(500ms);
               flag = switch_compliance_mode(true);
             } while (!flag);
 
@@ -595,8 +600,11 @@ private:
 
             bool flag;
             do {
+              rclcpp::sleep_for(500ms);
               flag = switch_compliance_mode(false);
             } while (!flag);
+
+            rclcpp::sleep_for(1s);
 
             RCLCPP_INFO(this->get_logger(), "Sending robot home pose");
             RCLCPP_INFO(this->get_logger(), "Waiting for goal confirmation");
