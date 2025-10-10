@@ -541,19 +541,22 @@ public:
             auto start = this->now();
             Eigen::Matrix<double, 6, 6> initial_KP = KP;
             Eigen::Matrix<double, 6, 6> initial_KD = KD;
+            Eigen::Matrix<double, 7, 7> initial_KD_J = KD_J;
             while ((this->now() - start).seconds() < 1.0) {
               auto t = (this->now() - start).seconds();
               if (t > 1.0) {
                 t = 1.0;
               }
-              KD = (initial_KD * 0.4) * t + initial_KD * (1.0 - t);
+              KD = (initial_KD * 1.0) * t + initial_KD * (1.0 - t);
               KP = initial_KP * exp(-9.0 * t);
+              // KD_J = initial_KD_J * exp(-9.0 * t);
               rclcpp::sleep_for(5ms);
             }
             KP = KP * 0.0;
+            KD_J = KD_J * 0.0;
             RCLCPP_INFO_STREAM(this->get_logger(), "KP = " << KP);
             RCLCPP_INFO_STREAM(this->get_logger(), "KD = " << KD);
-            RCLCPP_INFO(this->get_logger(), "KP = 0");
+            RCLCPP_INFO_STREAM(this->get_logger(), "KD_J = " << KD_J);
             compliance_mode.store(true);
             response->result = true;
             RCLCPP_INFO(this->get_logger(),
@@ -583,6 +586,7 @@ public:
               }
               init_cartesian_cmd(current_joints_config_vec);
             }
+            set_kd_j();
             set_kp();
             set_kd();
             compliance_mode.store(false);
@@ -698,22 +702,12 @@ public:
       MD.diagonal() = MD_;
       Eigen::Matrix<double, 6, 6> MD_1 = MD.inverse();
 
+      set_kd_j();
+      RCLCPP_INFO_STREAM(this->get_logger(), "Joint vel damping: " << KD_J);
+
       // Coefficient for dynamic lambda damping
-      double alpha = this->get_parameter("alpha").as_double();
       double k_max = this->get_parameter("k_max").as_double();
       double eps = this->get_parameter("eps").as_double();
-
-      // Get jacobian function
-      // auto get_jacob =
-      //     [this](const Eigen::Vector<double, 7> &current_joint_pos) {
-      //       auto state = franka::RobotState{};
-      //       for (size_t i = 0; i < state.q.size(); i++) {
-      //         state.q[i] = current_joint_pos[i];
-      //       }
-      //
-      //       return get_jacobian(this->panda_franka_model->zeroJacobian(
-      //           franka::Frame::kFlange, state));
-      //     };
 
       auto get_jacob = [this](
                            const Eigen::Vector<double, 7> &current_joint_pos) {
@@ -982,7 +976,7 @@ public:
 
         Eigen::Vector<double, 7> control_input_vec =
             mass_matrix * y + coriolis + extern_tau -
-            10.0 * current_joints_speed;
+            KD_J * current_joints_speed;
 
         // Clamp tau
         clamp_control(control_input_vec);
@@ -1631,6 +1625,7 @@ private:
   double Md_rot{};
   Eigen::Matrix<double, 6, 6> KP{};
   Eigen::Matrix<double, 6, 6> KD{};
+  Eigen::Matrix<double, 7, 7> KD_J{};
   double joint_speed_safe_limit{};
   double percentage_effort_safe_limit{};
   double error_pose_norm_safe_limit{};
@@ -1659,7 +1654,7 @@ private:
       if (t > 1.0) {
         t = 1.0;
       }
-      KP = final_KP * t;
+      KP = final_KP * 1.0;
       rclcpp::sleep_for(5ms);
     }
     RCLCPP_INFO(this->get_logger(), "Set KP");
@@ -1680,10 +1675,44 @@ private:
       if (t > 1.0) {
         t = 1.0;
       }
-      KD = final_KD * t;
+      KD = final_KD * 1.0;
       rclcpp::sleep_for(5ms);
     }
     RCLCPP_INFO(this->get_logger(), "Set KD");
+  }
+
+  void set_kd_j() {
+
+    // Damping coefficient to handle joint drifts caused by 7th DOF not used
+    // in control law
+    double joint_damping = 10.0;
+    // double effort_ratio = 12.0 / 87.0;
+    double effort_ratio = 1.0;
+    Eigen::Vector<double, 7> KD_J_{joint_damping,
+                                   joint_damping,
+                                   joint_damping,
+                                   joint_damping,
+                                   joint_damping * effort_ratio,
+                                   joint_damping * effort_ratio,
+                                   joint_damping * effort_ratio};
+    Eigen::Matrix<double, 7, 7> final_KD_J =
+        Eigen::Matrix<double, 7, 7>::Identity();
+    final_KD_J.diagonal() = KD_J_;
+    if (final_KD_J == KD_J) {
+      return;
+    }
+    KD_J = Eigen::Matrix<double, 7, 7>::Zero();
+    auto start = this->now();
+    while ((this->now() - start).seconds() < 1.0) {
+      auto t = (this->now() - start).seconds();
+      if (t > 1.0) {
+        t = 1.0;
+      }
+      KD_J = final_KD_J * t;
+      rclcpp::sleep_for(5ms);
+    }
+      KD_J = final_KD_J * 1.0;
+    RCLCPP_INFO(this->get_logger(), "Set KD_J");
   }
 
   Eigen::Vector<double, 7>
