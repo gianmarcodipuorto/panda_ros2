@@ -260,7 +260,7 @@ public:
     stop_traj_options_.result_callback = stop_result_callback;
 
     home_goal_.desired_pose = home_pose_;
-    home_goal_.total_time = 8.0;
+    home_goal_.total_time = 10.0;
 
     Eigen::Quaterniond triangle_orient{
         home_pose_.orientation.w, home_pose_.orientation.x,

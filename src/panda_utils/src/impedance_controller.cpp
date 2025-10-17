@@ -547,12 +547,14 @@ public:
               if (t > 1.0) {
                 t = 1.0;
               }
-              // KD = (initial_KD * 1.0) * t + initial_KD * (1.0 - t);
+              KD = (initial_KD * 0.6) * t + initial_KD * (1.0 - t);
               KP = initial_KP * exp(-9.0 * t);
               // KD_J = initial_KD_J * exp(-9.0 * t);
               rclcpp::sleep_for(5ms);
             }
             KP = KP * 0.0;
+            
+            set_md_kd(2.0);
             // KD_J = KD_J * 0.0;
             RCLCPP_INFO_STREAM(this->get_logger(), "KP = " << KP);
             RCLCPP_INFO_STREAM(this->get_logger(), "KD = " << KD);
@@ -994,7 +996,7 @@ public:
                                         "Running safety check: effort limit");
                 RCLCPP_ERROR_STREAM(this->get_logger(),
                                     "Torque abs value over limit ("
-                                        << percentage_effort_safe_limit * 10.0
+                                        << percentage_effort_safe_limit * 100.0
                                         << "%)");
                 panda_franka->stop();
                 start_flag.store(false);
@@ -1299,12 +1301,12 @@ public:
                                  ex.what());
                     last_joint_contact_frame = std::nullopt;
                     transform_to_wrist = std::nullopt;
-                    set_md_kd();
+                    set_md_kd(2.0);
                   }
                 } else {
                   last_joint_contact_frame = std::nullopt;
                   transform_to_wrist = std::nullopt;
-                  set_md_kd();
+                  set_md_kd(2.0);
                   std::this_thread::sleep_for(500ms);
                 }
               } else {
@@ -1754,6 +1756,8 @@ private:
                                    1.0 / (Md_rot * mul),
                                    1.0 / (Md_rot * mul),
                                    1.0 / (Md_rot * mul)};
+    double eta = Kd_rot / (2 * std::sqrt(Kp_rot * Md_rot));
+    double Kd_rot_mod = 2 * eta * std::sqrt(Kp_rot * Md_rot * mul);
 
     Eigen::Matrix<double, 6, 6> final_MD =
         Eigen::Matrix<double, 6, 6>::Identity();
@@ -1762,8 +1766,8 @@ private:
     final_MD.diagonal() = MD_;
     final_MD_1.diagonal() = MD_1_;
 
-    Eigen::Vector<double, 6> KD_{Kd,           Kd,           Kd,
-                                 Kd_rot * mul, Kd_rot * mul, Kd_rot * mul};
+    Eigen::Vector<double, 6> KD_{Kd,         Kd,         Kd,
+                                 Kd_rot_mod, Kd_rot_mod, Kd_rot_mod};
     Eigen::Matrix<double, 6, 6> final_KD =
         Eigen::Matrix<double, 6, 6>::Identity();
     final_KD.diagonal() = KD_;
@@ -1815,14 +1819,14 @@ private:
       RCLCPP_INFO_STREAM(this->get_logger(), "Set KD_J: " << KD_J);
       return;
     }
-    KD_J = Eigen::Matrix<double, 7, 7>::Zero();
+    Eigen::Matrix<double, 7, 7> initial_KD_J = KD_J;
     auto start = this->now();
     while ((this->now() - start).seconds() < 1.0) {
       auto t = (this->now() - start).seconds();
       if (t > 1.0) {
         t = 1.0;
       }
-      KD_J = final_KD_J * t;
+      KD_J = initial_KD_J + t * (final_KD_J - initial_KD_J);
       rclcpp::sleep_for(5ms);
     }
     KD_J = final_KD_J * 1.0;
