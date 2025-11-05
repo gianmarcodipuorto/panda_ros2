@@ -6,3 +6,5 @@ bags
 .vscode
 .new.txt
 launch.json
+docs/*/book/*
+docs/doxygen
