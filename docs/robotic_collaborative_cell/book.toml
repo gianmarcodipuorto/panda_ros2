@@ -2,3 +2,7 @@
 title = "Robotic collaborative cell"
 authors = ["GianlucaPandolfi"]
 language = "en"
+
+[output.html]
+mathjax-support = true
+

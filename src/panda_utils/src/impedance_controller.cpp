@@ -912,12 +912,6 @@ public:
               tau_ext[i] = 0.0;
             }
           }
-          // h_e_measured =
-          //     jacobian_transposed.transpose() *
-          //     (jacobian_transposed * jacobian_transposed.transpose() +
-          //      1e-5 * 1e-5 * Eigen::Matrix<double, 7, 7>::Identity())
-          //         .inverse() *
-          //     tau_ext;
           h_e_measured =
               compute_jacob_pseudoinv_h_e(jacobian_transposed, lambda) *
               tau_ext;

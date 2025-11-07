@@ -4,9 +4,17 @@ The package contains all the files needed for the gazebo simulation containing t
 
 ## Nodes  
 
-- **image_converter** node converts the gazebo depth map image in 16UC1 format for the YOLO nodes.
-- **joint_state_publisher_effort_patcher** node republishes the _JointState_ message coming from the bridge to the same ROS2 network updating the torque field with the torque commanded by the controller. This node is required because the _JointStatePublisher_ plugin in gazebo have an [open issue](https://github.com/gazebosim/gz-sim/issues/883) regarding the torque exterted by the joints.
-- **torque_sensor_publisher** node republishes the external torques acting on the joints as a _WrenchStamped_ message.
+### *image_converter*  
+
+The *image_converter* node converts the gazebo depth map image in 16UC1 format for the YOLO nodes.
+
+### *joint_state_publisher_effort_patcher*  
+
+The *joint_state_publisher_effort_patcher* node republishes the _JointState_ message coming from the bridge to the same ROS2 network updating the torque field with the torque commanded by the controller. This node is required because the _JointStatePublisher_ plugin in gazebo have an [open issue](https://github.com/gazebosim/gz-sim/issues/883) regarding the torque exterted by the joints.
+
+### *torque_sensor_publisher*  
+
+The *torque_sensor_publisher* node republishes the external torques acting on the joints as a _WrenchStamped_ message.
 
 ## Launch files  
 

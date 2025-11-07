@@ -351,7 +351,8 @@ public:
             this->publish_skeleton_markers(this->shared_keypoints,
                                            !use_filtering);
             this->publish_keypoints_tf(this->shared_keypoints, !use_filtering);
-            // this->publish_body_lengths(this->shared_keypoints, !use_filtering);
+            // this->publish_body_lengths(this->shared_keypoints,
+            // !use_filtering);
           }
           if (debug) {
             debug_print(this->shared_keypoints);
@@ -548,9 +549,11 @@ private:
   void
   kalman_predict(const std::map<int, skeleton_utils::landmark_3d> &keypoints,
                  bool init_new = true, bool only_predict = false);
+  // region synchronized_callback
   void synchronized_callback(
       const Image::ConstSharedPtr &image,
       const yolo_msgs::msg::DetectionArray::ConstSharedPtr &detections);
+  // endregion synchronized_callback
   void debug_print(const std::map<int, skeleton_utils::landmark_3d> &keypoints);
 
   std::map<int, skeleton_utils::landmark_3d> get_keypoints(
