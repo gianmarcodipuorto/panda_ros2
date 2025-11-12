@@ -139,17 +139,15 @@ std::array<double, 16> inline get_transform_matrix(
 
 inline geometry_msgs::msg::Pose
 get_pose(const std::array<double, 16> &transform_mat) {
-  Eigen::Map<const Eigen::Matrix4d> eigen_matrix(transform_mat.data());
+  Eigen::Affine3d initial_transform(Eigen::Matrix4d::Map(transform_mat.data()));
 
   geometry_msgs::msg::Pose pose_msg;
 
-  pose_msg.position.x = eigen_matrix(0, 3); // Tx
-  pose_msg.position.y = eigen_matrix(1, 3); // Ty
-  pose_msg.position.z = eigen_matrix(2, 3); // Tz
+  pose_msg.position.x = initial_transform.translation().x(); // Tx
+  pose_msg.position.y = initial_transform.translation().y(); // Ty
+  pose_msg.position.z = initial_transform.translation().z(); // Tz
 
-  Eigen::Matrix3d rotation_matrix = eigen_matrix.block<3, 3>(0, 0);
-
-  Eigen::Quaterniond quaternion(rotation_matrix);
+  Eigen::Quaterniond quaternion(initial_transform.rotation());
   quaternion.normalize();
 
   pose_msg.orientation.x = quaternion.x();
@@ -162,19 +160,74 @@ get_pose(const std::array<double, 16> &transform_mat) {
 
 inline Eigen::Matrix<double, 6, 7>
 get_jacobian(const std::array<double, 42> &jacob_raw) {
-
-  Eigen::Matrix<double, 6, 7> jacobian;
-  for (size_t i = 0; i < 7; i++) {
-    for (size_t j = 0; j < 6; j++) {
-      jacobian(j, i) = jacob_raw[i * 7 + j];
-    }
-  }
+  Eigen::Map<const Eigen::Matrix<double, 6, 7>, Eigen::ColMajor> jacobian(
+      jacob_raw.data());
   return jacobian;
+}
+
+inline geometry_msgs::msg::Pose
+convertMatrixToPose(const std::array<double, 16> &tf_matrix) {
+  Eigen::Map<const Eigen::Matrix4d> eigen_matrix(tf_matrix.data());
+  geometry_msgs::msg::Pose pose_msg;
+  pose_msg.position.x = eigen_matrix(0, 3);
+  pose_msg.position.y = eigen_matrix(1, 3);
+  pose_msg.position.z = eigen_matrix(2, 3);
+  Eigen::Matrix3d rotation_matrix = eigen_matrix.block<3, 3>(0, 0);
+  Eigen::Quaterniond quaternion(rotation_matrix);
+  quaternion.normalize();
+  pose_msg.orientation.x = quaternion.x();
+  pose_msg.orientation.y = quaternion.y();
+  pose_msg.orientation.z = quaternion.z();
+  pose_msg.orientation.w = quaternion.w();
+  return pose_msg;
 }
 
 } // namespace geom_utils
 
-struct  decay_laws {
+namespace linalg_utils {
+
+inline Eigen::Matrix3d skewSymmetricMatrix(const Eigen::Vector3d &p) {
+  Eigen::Matrix3d p_cross;
+  p_cross << 0, -p(2), p(1), p(2), 0, -p(0), -p(1), p(0), 0;
+  return p_cross;
+}
+
+inline Eigen::Matrix<double, 6, 6>
+calculateAdjoint(const Eigen::Matrix4d &T_matrix) {
+  Eigen::Matrix3d R = T_matrix.block<3, 3>(0, 0);
+  Eigen::Vector3d p = T_matrix.block<3, 1>(0, 3);
+
+  Eigen::Matrix3d p_cross_R = skewSymmetricMatrix(p) * R;
+
+  Eigen::Matrix<double, 6, 6> Ad_T = Eigen::Matrix<double, 6, 6>::Zero();
+  Ad_T.block<3, 3>(0, 0) = R;
+  Ad_T.block<3, 3>(0, 3) = p_cross_R;
+  Ad_T.block<3, 3>(3, 3) = R;
+
+  return Ad_T;
+}
+
+inline Eigen::Matrix<double, 6, 6>
+calculateAdjointForWrenches(const Eigen::Matrix4d &T_source_to_target) {
+  // Extract rotation matrix R and translation vector p from the homogeneous
+  // transform
+  Eigen::Matrix3d R = T_source_to_target.block<3, 3>(0, 0);
+  Eigen::Vector3d p = T_source_to_target.block<3, 1>(0, 3);
+
+  // Compute [p]_x * R
+  Eigen::Matrix3d p_cross_R = skewSymmetricMatrix(p) * R;
+
+  // Construct the 6x6 adjoint matrix for wrenches
+  Eigen::Matrix<double, 6, 6> Ad_wrench_T = Eigen::Matrix<double, 6, 6>::Zero();
+  Ad_wrench_T.block<3, 3>(0, 0) = R;         // Top-left: R
+  Ad_wrench_T.block<3, 3>(3, 0) = p_cross_R; // Bottom-left: [p]_x * R
+  Ad_wrench_T.block<3, 3>(3, 3) = R;         // Bottom-right: R
+
+  return Ad_wrench_T;
+}
+} // namespace linalg_utils
+
+struct decay_laws {
   double lambda, beta, a, b, t_f;
   double q_i, q_i_dot, q_i_ddot;
   decay_laws(double t_f, double q_i, double q_i_dot, double q_i_ddot,

@@ -147,9 +147,6 @@ private:
       panda_interfaces::msg::CartesianCommand>
       cartesian_cmd_pub;
 
-  // rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr cmd_pose_sub;
-  // rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_twist_sub;
-  // rclcpp::Subscription<geometry_msgs::msg::Accel>::SharedPtr cmd_accel_sub;
   rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr
       cmd_cartesian_sub;
 
@@ -313,9 +310,6 @@ private:
 
       RCLCPP_DEBUG_ONCE(this->get_logger(), "Publish command");
 
-      // cmd_pose_pub->tryPublish(cmd_pose);
-      // cmd_twist_pub->tryPublish(cmd_twist);
-      // cmd_accel_pub->tryPublish(cmd_accel);
       cmd_cartesian.pose = cmd_pose;
       cmd_cartesian.twist = cmd_twist;
       cmd_cartesian.accel = cmd_accel;

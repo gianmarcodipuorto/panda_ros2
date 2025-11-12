@@ -47,44 +47,10 @@ def generate_launch_description():
         description='Controller Md rotational part'
     )
 
-    lambda_pinv = DeclareLaunchArgument(
-        'lambda',
-        default_value='0.01',
-        description='Lambda value for damped least square jacobian pseudo-inverse'
-    )
-    k_max = DeclareLaunchArgument(
-        'k_max',
-        default_value='2.0',
-        description='Max value for quadratic based lambda handling'
-    )
-    eps = DeclareLaunchArgument(
-        'eps',
-        default_value='0.1',
-        description='Minimum value for quadratic based lambda handling'
-    )
-
     control_rate = DeclareLaunchArgument(
         'controller_rate',
         default_value='1000.0',
-        description='Controller PD + gravity rate'
-    )
-
-    loop_rate_freq = DeclareLaunchArgument(
-        'loop_rate_freq',
-        default_value='1000.0',
-        description='Trajectory server rate frequency'
-    )
-
-    clik_ts = DeclareLaunchArgument(
-        'clik_ts',
-        default_value='0.01',
-        description='CLIK related sample time'
-    )
-
-    clik_gamma = DeclareLaunchArgument(
-        'clik_gamma',
-        default_value='0.5',
-        description='CLIK related gamma gain (not divided by ts)'
+        description='Controller rate'
     )
 
     clamp_effort_control = DeclareLaunchArgument(
@@ -99,12 +65,6 @@ def generate_launch_description():
         description='Use fr3 real robot (set also robot ip)'
     )
 
-    use_franka_sim = DeclareLaunchArgument(
-        'use_franka_sim',
-        default_value='False',
-        description='Use panda real robot library (set also robot ip)'
-    )
-
     robot_ip = DeclareLaunchArgument(
         'robot_ip',
         default_value='192.168.1.0',
@@ -115,18 +75,6 @@ def generate_launch_description():
         'world_base_link',
         default_value='[0.25, 0.17, 0.845, 1.0, 0.0, 0.0, 0.0]',
         description='Base to world transform'
-    )
-
-    alpha = DeclareLaunchArgument(
-        'alpha',
-        default_value='30.0',
-        description='Paramater used for computations of DLS jacobian based on sigma min'
-    )
-
-    task_gain = DeclareLaunchArgument(
-        'task_gain',
-        default_value='1.0',
-        description='Secondary task gain'
     )
 
     safe_joint_speed = DeclareLaunchArgument(
@@ -188,7 +136,6 @@ def generate_launch_description():
         prefix = ['taskset -c 4'],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
-            # 'loop_rate_freq': loop_rate_freq,
         }],
     )
     stop_traj_server = Node(
@@ -197,7 +144,6 @@ def generate_launch_description():
         name='stop_traj_server',
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
-            # 'loop_rate_freq': loop_rate_freq,
         }],
     )
     loop_cart_traj_server = Node(
@@ -207,7 +153,6 @@ def generate_launch_description():
         prefix = ['taskset -c 5'],
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time'),
-            # 'loop_rate_freq': loop_rate_freq,
         }],
     )
     presence_state_node = Node(
@@ -239,11 +184,9 @@ def generate_launch_description():
             'Kp': LaunchConfiguration('controller_kp'),
             'Kd': LaunchConfiguration('controller_kd'),
             'Md': LaunchConfiguration('controller_md'),
-            'alpha': LaunchConfiguration('alpha'),
             'control_freq': LaunchConfiguration('controller_rate'),
             'clamp': LaunchConfiguration('clamp_effort_control'),
             'use_robot': LaunchConfiguration('use_robot'),
-            'use_franka_sim': LaunchConfiguration('use_franka_sim'),
             'robot_ip': LaunchConfiguration('robot_ip')
 
         }],
@@ -263,15 +206,9 @@ def generate_launch_description():
             'Kp_rot': LaunchConfiguration('controller_kp_rot'),
             'Kd_rot': LaunchConfiguration('controller_kd_rot'),
             'Md_rot': LaunchConfiguration('controller_md_rot'),
-            'lambda': LaunchConfiguration('lambda'),
-            'k_max': LaunchConfiguration('k_max'),
-            'eps': LaunchConfiguration('eps'),
-            'task_gain': LaunchConfiguration('task_gain'),
-            'alpha': LaunchConfiguration('alpha'),
             'control_freq': LaunchConfiguration('controller_rate'),
             'clamp': LaunchConfiguration('clamp_effort_control'),
             'use_robot': LaunchConfiguration('use_robot'),
-            'use_franka_sim': LaunchConfiguration('use_franka_sim'),
             'robot_ip': LaunchConfiguration('robot_ip'),
             'world_base_link': LaunchConfiguration('world_base_link'),
             'safe_joint_speed': LaunchConfiguration('safe_joint_speed'),
@@ -304,23 +241,14 @@ def generate_launch_description():
         controller_kp_rot,
         controller_kd_rot,
         controller_md_rot,
-        lambda_pinv,
-        eps,
-        k_max,
         control_rate,
-        loop_rate_freq,
         clamp_effort_control,
         use_robot,
-        use_franka_sim,
         robot_ip,
-        clik_ts,
-        clik_gamma,
-        alpha,
-        task_gain,
         safe_joint_speed,
         safe_effort_perc,
         wrist_estimation,
-        contact_threshold, 
+        contact_threshold,
         no_contact_threshold,
         home_pose,
         world_base_link,
@@ -333,11 +261,10 @@ def generate_launch_description():
         frame_publisher,
         demo,
 
+        inverse_dynamics_controller,
+        joint_traj_server,
+
         # publish_franks_tfs,
         # external_force_estimator,
-
-        # clik_cmd_pub,
-        # inverse_dynamics_controller,
         # publish_tfs_and_estimate_forces
-        # joint_traj_server,
     ])

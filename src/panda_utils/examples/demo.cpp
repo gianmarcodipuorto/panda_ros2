@@ -67,7 +67,7 @@ using OptionalGoalHandle = typename std::optional<
     typename rclcpp_action::ClientGoalHandle<ActionT>::SharedPtr>;
 
 enum class SceneState {
-  // The robot has to be configured
+  // The robot has to be moved in home pose
   no_state,
   // The robot is doing whichever task has to do
   task,
@@ -76,9 +76,8 @@ enum class SceneState {
   transition_human,
   // The robot is in compliance mode: it can be freely moved by the human
   compliance,
-  // The human leaves the robot area, allowing the robot to resume task
+  // The human leaves the robot area, allowing the robot to return in home pose and resume task
   transition_leave_human,
-
 };
 
 void fill_pose_orientation(geometry_msgs::msg::Pose &pose,

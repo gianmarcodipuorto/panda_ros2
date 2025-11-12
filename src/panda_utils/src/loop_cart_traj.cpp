@@ -231,23 +231,6 @@ public:
         this, panda_interface_names::panda_cart_loop_action_name, handle_goal,
         handle_cancel, handle_accepted);
 
-    // cmd_pose_pub = std::make_shared<
-    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Pose>>(
-    //     this->create_publisher<geometry_msgs::msg::Pose>(
-    //         panda_interface_names::panda_pose_cmd_topic_name,
-    //         panda_interface_names::DEFAULT_TOPIC_QOS()));
-    //
-    // cmd_twist_pub = std::make_shared<
-    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Twist>>(
-    //     this->create_publisher<geometry_msgs::msg::Twist>(
-    //         panda_interface_names::panda_twist_cmd_topic_name,
-    //         panda_interface_names::DEFAULT_TOPIC_QOS()));
-    //
-    // cmd_accel_pub = std::make_shared<
-    //     realtime_tools::RealtimePublisher<geometry_msgs::msg::Accel>>(
-    //     this->create_publisher<geometry_msgs::msg::Accel>(
-    //         panda_interface_names::panda_accel_cmd_topic_name,
-    //         panda_interface_names::DEFAULT_TOPIC_QOS()));
     cartesian_cmd_pub = std::make_shared<realtime_tools::RealtimePublisher<
         panda_interfaces::msg::CartesianCommand>>(
         this->create_publisher<panda_interfaces::msg::CartesianCommand>(
@@ -256,13 +239,6 @@ public:
   }
 
 private:
-  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Pose>
-  //     cmd_pose_pub;
-  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Twist>
-  //     cmd_twist_pub;
-  // realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::Accel>
-  //     cmd_accel_pub;
-
   realtime_tools::RealtimePublisherSharedPtr<
       panda_interfaces::msg::CartesianCommand>
       cartesian_cmd_pub;
@@ -302,7 +278,6 @@ private:
         10s, panda_interface_names::CONTROLLER_PUBLISHER_QOS());
 
     size_t index = 0;
-    int num_poses = goal->desired_poses.size();
     geometry_msgs::msg::Pose first_des_pose = goal->desired_poses[0];
 
     Eigen::Quaterniond initial_quat{
