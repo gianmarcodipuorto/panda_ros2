@@ -24,7 +24,6 @@
 #include "panda_interfaces/srv/wrist_contact.hpp"
 #include "panda_utils/constants.hpp"
 #include "panda_utils/debug_publisher.hpp"
-#include "panda_utils/robot.hpp"
 #include "panda_utils/robot_model.hpp"
 #include "panda_utils/utils_func.hpp"
 #include "realtime_tools/realtime_tools/realtime_helpers.hpp"

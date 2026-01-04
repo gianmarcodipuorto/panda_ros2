@@ -4,7 +4,6 @@
 #include "panda_interfaces/action/joint_traj.hpp"
 #include "panda_interfaces/msg/joints_command.hpp"
 #include "panda_utils/constants.hpp"
-#include "panda_utils/robot.hpp"
 #include "panda_utils/robot_model.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include <Eigen/src/Core/Matrix.h>

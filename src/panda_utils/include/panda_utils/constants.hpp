@@ -1,19 +1,8 @@
 #pragma once
 
-#include "robot.hpp"
 #include <rclcpp/qos.hpp>
 #include <string>
-
-const DHParameters PANDA_DH_PARAMETERS[7] = {
-    {0.0, -M_PI_2, 0.3330, 0.0},   {0.0, M_PI_2, 0.0, 0.0},
-    {0.0825, M_PI_2, 0.3160, 0.0}, {-0.0825, -M_PI_2, 0.0, 0.0},
-    {0.0, M_PI_2, 0.3840, 0.0},    {0.0880, M_PI_2, 0.0, 0.0},
-    {0.0, 0.0, 0.1070, 0.0}};
-
-const JointType PANDA_JOINT_TYPES[7] = {
-    JointType::REVOLUTE, JointType::REVOLUTE, JointType::REVOLUTE,
-    JointType::REVOLUTE, JointType::REVOLUTE, JointType::REVOLUTE,
-    JointType::REVOLUTE};
+#include "tf2_eigen/tf2_eigen.hpp"
 
 extern const rclcpp::Duration max_tf_age;
 extern const double robot_radius_area; // meters

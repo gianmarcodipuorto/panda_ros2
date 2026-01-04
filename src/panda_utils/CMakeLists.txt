@@ -116,10 +116,6 @@ add_executable(impedance_controller ./src/impedance_controller.cpp ./src/constan
 ament_target_dependencies(impedance_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools tf2_geometry_msgs std_srvs)
 target_link_libraries(impedance_controller robot_model franka debug_publisher)
 
-add_executable(estimate_hand_external_force ./examples/hand_and_force_estimation.cpp)
-ament_target_dependencies(estimate_hand_external_force rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs rclcpp_lifecycle tf2_geometry_msgs ament_index_cpp)
-target_link_libraries(estimate_hand_external_force franka)
-
 install(TARGETS
   send_joints_effort_server
   send_joints_effort_simple_client
@@ -132,7 +128,6 @@ install(TARGETS
   cart_traj_example
   joint_traj_example
   impedance_controller
-  estimate_hand_external_force
   loop_cart_traj_example
   human_presence
   frame_publisher

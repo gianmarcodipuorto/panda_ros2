@@ -16,7 +16,6 @@
 #include "panda_interfaces/msg/joints_pos.hpp"
 #include "panda_interfaces/srv/set_compliance_mode.hpp"
 #include "panda_utils/constants.hpp"
-#include "panda_utils/robot.hpp"
 #include "panda_utils/robot_model.hpp"
 #include "realtime_tools/realtime_tools/realtime_helpers.hpp"
 #include "realtime_tools/realtime_tools/realtime_publisher.hpp"
