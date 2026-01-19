@@ -26,12 +26,10 @@ rosdep install --from-paths src --ignore-src -r -y
 colcon build
 ```
 
-## Configuration (optional)
+## Configuration (2 machines setup)
 
 ```
-export CYCLONEDDS_URI=/home/snasn/data/cyclonedds.xml
 export ROS_DOMAIN_ID=0
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
 ## Running the demo  
