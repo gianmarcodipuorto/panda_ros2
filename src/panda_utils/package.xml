@@ -13,9 +13,8 @@
   <depend>panda_interfaces</depend>
   <depend>image_processing</depend>
   <depend>ament_index_cpp</depend>
+  <depend>geometry_msgs</depend>
   <exec_depend>ros2launch</exec_depend>
-  <build_depend>pinocchio</build_depend>
-  <exec_depend>pinocchio</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

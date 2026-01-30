@@ -2,7 +2,7 @@
 #include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
 #include "panda_interfaces/msg/joints_effort.hpp"
-#include "panda_interfaces/msg/wrench_array.hpp"
+//#include "panda_interfaces/msg/wrench_array.hpp"
 #include <rclcpp/create_timer.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/publisher.hpp>

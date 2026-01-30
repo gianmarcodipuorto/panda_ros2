@@ -1,6 +1,6 @@
 #include "panda_utils/robot_model.hpp"
-#include "algorithm/frames.hpp"
-#include "algorithm/jacobian.hpp"
+#include "pinocchio/algorithm/frames.hpp"
+#include "pinocchio/algorithm/jacobian.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "multibody/fwd.hpp"
 #include "spatial/fwd.hpp"

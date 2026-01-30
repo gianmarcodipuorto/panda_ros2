@@ -10,7 +10,6 @@
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
-#include "image_processing/constants.hpp"
 #include "multibody/fwd.hpp"
 #include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_interfaces/msg/double_array_stamped.hpp"
@@ -21,7 +20,7 @@
 #include "panda_interfaces/msg/joints_effort.hpp"
 #include "panda_interfaces/msg/joints_pos.hpp"
 #include "panda_interfaces/srv/set_compliance_mode.hpp"
-#include "panda_interfaces/srv/wrist_contact.hpp"
+//#include "panda_interfaces/srv/wrist_contact.hpp"
 #include "panda_utils/constants.hpp"
 #include "panda_utils/debug_publisher.hpp"
 #include "panda_utils/robot_model.hpp"
@@ -82,8 +81,8 @@
 #include <thread>
 #include <vector>
 
-template <typename messageT> using Publisher = rclcpp::Publisher<messageT>;
-using geometry_msgs::msg::Accel;
+template <typename messageT> using Publisher = rclcpp::Publisher<messageT>; //ridefinisce rclcpp::Publisher semplicemente come Publisher per usarlo piu' comodamente 
+using geometry_msgs::msg::Accel;  //ridefinisce geometry_msgs::msg::Accel semplicemente come Accel per usarlo piu' comodamente e coì via per gli altri
 using geometry_msgs::msg::AccelStamped;
 using geometry_msgs::msg::Pose;
 using geometry_msgs::msg::PoseStamped;
@@ -98,8 +97,9 @@ using namespace std::chrono_literals;
 
 auto DEFAULT_URDF_PATH =
     ament_index_cpp::get_package_share_directory("panda_world") +
-    panda_constants::panda_model_effort_no_table;
+    panda_constants::panda_model_effort_no_table; //Qui ha definito un path dinamico a runtime, innanzitutto si prende il percorso di panda_world e poi aggiunge il path del file urdf che è definito come costante in constants.hpp
 
+//Si va a creare una enumerazione fortemente tipizzata con due stati mutuamente esclusivi così si può usare senza un booleano che può essere confuso 
 enum class Mode {
   // Simulation only mode
   sim,
@@ -108,21 +108,12 @@ enum class Mode {
 };
 
 struct robot_state {
-  std::optional<franka::RobotState> state;
+  std::optional<franka::RobotState> state; //può essere valorizzata o no
   rclcpp::Time state_time;
   std::mutex mut;
 };
 
-/**
- * @brief Compute Jdot as finite difference: J_forw - J_back / (2 dt) = J_dot
- *
- * @param std::function<Eigen::Matrix<double, 6, 7>(Eigen::Vector<double, 7>)>
- * get_jacobian_func
- * @param const Eigen::Vector<double, 7> & current_joint_pos
- * @param const Eigen::Vector<double, 7> & current_joint_speed
- * @param const double delta_time = 1e-3
- * @return Eigen::Matrix<double, 6, 7>
- */
+//Funzione che calcola la derivata temporale del Jacobiano Jdot tramite differenze finite
 Eigen::Matrix<double, 6, 7>
 get_j_dot(std::function<Eigen::Matrix<double, 6, 7>(Eigen::Vector<double, 7>)>
               get_jacobian_func,
@@ -143,16 +134,18 @@ get_j_dot(std::function<Eigen::Matrix<double, 6, 7>(Eigen::Vector<double, 7>)>
   return J_dot;
 }
 
+//calcolo la pseudoinvers di una matrice 6x7
 Eigen::Matrix<double, 7, 6>
 compute_jacob_pseudoinv(const Eigen::Matrix<double, 6, 7> &jacobian) {
   return jacobian.completeOrthogonalDecomposition().pseudoInverse();
 }
 
+//calcolo la pseudoinvers di una matrice 7x6
 Eigen::Matrix<double, 6, 7>
 compute_jacob_pseudoinv_h_e(const Eigen::Matrix<double, 7, 6> &jacobian) {
   return jacobian.completeOrthogonalDecomposition().pseudoInverse();
 }
-
+//Il modello è quello che va a definire il robot, le sue caratteristiche cinematiche e dinamiche e viene caricato direttamente da libfranka
 void print_initial_franka_state(const franka::RobotState state,
                                 const franka::Model &model,
                                 rclcpp::Logger logger) {
@@ -165,8 +158,9 @@ void print_initial_franka_state(const franka::RobotState state,
     RCLCPP_INFO_STREAM(logger, "Joint " << i + 1 << ": " << state.q[i]);
   }
   Pose current_pose =
-      geom_utils::get_pose(model.pose(franka::Frame::kFlange, state));
-  RCLCPP_INFO_STREAM_ONCE(
+      geom_utils::get_pose(model.pose(franka::Frame::kFlange, state)); //chiamo il metodo pose della libreria franka che mi restituisce la posa del flange rispetto all'origine del robot e poi usa una funzione di utility per convertirla in un messaggio ROS
+      //dipende dall'URDF del robot che è stato caricato nel modello  
+      RCLCPP_INFO_STREAM_ONCE(
       logger, "Current position: ["
                   << current_pose.position.x << ", " << current_pose.position.y
                   << ", " << current_pose.position.z << "]; Orientation: [] "
@@ -175,6 +169,8 @@ void print_initial_franka_state(const franka::RobotState state,
                   << current_pose.orientation.y << ", "
                   << current_pose.orientation.z << "]");
 
+  //a partire dallo stato del robot mi vado ad ottenere la posa dell'end effector rispetto al frame di origine del robot
+  //usa la trasformata fornita dal robot, ossia quello calcolato internamente dal robot stesso
   current_pose = geom_utils::get_pose(state.O_T_EE);
   RCLCPP_INFO_STREAM_ONCE(
       logger, "Current position (with O_T_EE): ["
@@ -188,7 +184,7 @@ void print_initial_franka_state(const franka::RobotState state,
       model.zeroJacobian(franka::Frame::kFlange, state));
   RCLCPP_INFO_STREAM_ONCE(logger, "Current jacobian: [" << jacobian << "]");
 
-  // B(q)
+  // B(q) calcolata dal modello
   std::array<double, 49> mass_matrix_raw = model.mass(state);
   Eigen::Matrix<double, 7, 7> mass_matrix;
   for (size_t i = 0; i < 7; i++) {
@@ -197,12 +193,14 @@ void print_initial_franka_state(const franka::RobotState state,
     }
   }
 
+  // C(q, qdot) calcolata dal modello
   std::array<double, 7> coriolis_raw = model.coriolis(state);
   Eigen::Vector<double, 7> coriolis;
   for (size_t i = 0; i < 7; i++) {
     coriolis(i) = coriolis_raw[i];
   }
 
+  // Funzione per ottenere il Jacobiano dato l'attuale posizione dei giunti
   auto get_jacob = [&model](const Eigen::Vector<double, 7> &current_joint_pos) {
     auto state = franka::RobotState{};
     for (size_t i = 0; i < state.q.size(); i++) {
@@ -210,14 +208,15 @@ void print_initial_franka_state(const franka::RobotState state,
     }
 
     return geom_utils::get_jacobian(
-        model.zeroJacobian(franka::Frame::kFlange, state));
+        model.zeroJacobian(franka::Frame::kFlange, state)); //kFlange è l'end effector
   };
 
+  //Estrae il valore singolare più piccolo (σ_min) del jacobiano
   Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeThinU |
                                                       Eigen::ComputeThinV);
   double sigma_min = svd.singularValues().tail(1)(0);
 
-  // DYNAMIC LAMBDA BASED ON MINIMUM SINGULAR VALUE
+  // Calcolo della pseudoinversa del Jacobiano con damping per proteggere da singolarità
   double k_max = 1.0;
   double eps = 0.1;
   double lambda = k_max * (1 - pow(sigma_min, 2) / pow(eps, 2));
@@ -287,26 +286,25 @@ public:
     this->get_parameter<std::vector<double>>("world_base_link",
                                              world_base_link);
 
-    franka_frame_enum_to_link_name[franka::Frame::kJoint1] = "fr3_link1";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint2] = "fr3_link2";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint3] = "fr3_link3";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint4] = "fr3_link4";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint5] = "fr3_link5";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint6] = "fr3_link6";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint7] = "fr3_link7";
-    franka_frame_enum_to_link_name[franka::Frame::kFlange] =
-        "fr3_link8"; // Typically end-effector name
+    franka_frame_enum_to_link_name[franka::Frame::kJoint1] = "panda_link1";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint2] = "panda_link2";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint3] = "panda_link3";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint4] = "panda_link4";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint5] = "panda_link5";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint6] = "panda_link6";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint7] = "panda_link7";
+    franka_frame_enum_to_link_name[franka::Frame::kFlange] = "panda_hand"; // Typically end-effector name
 
-    robot_link_name_to_franka_frame["fr3_link1"] = franka::Frame::kJoint1;
-    robot_link_name_to_franka_frame["fr3_link2"] = franka::Frame::kJoint2;
-    robot_link_name_to_franka_frame["fr3_link3"] = franka::Frame::kJoint3;
-    robot_link_name_to_franka_frame["fr3_link4"] = franka::Frame::kJoint4;
-    robot_link_name_to_franka_frame["fr3_link5"] = franka::Frame::kJoint5;
-    robot_link_name_to_franka_frame["fr3_link6"] = franka::Frame::kJoint6;
-    robot_link_name_to_franka_frame["fr3_link7"] = franka::Frame::kJoint7;
-    robot_link_name_to_franka_frame["fr3_link8"] = franka::Frame::kFlange;
+    robot_link_name_to_franka_frame["panda_link1"] = franka::Frame::kJoint1;
+    robot_link_name_to_franka_frame["panda_link2"] = franka::Frame::kJoint2;
+    robot_link_name_to_franka_frame["panda_link3"] = franka::Frame::kJoint3;
+    robot_link_name_to_franka_frame["panda_link4"] = franka::Frame::kJoint4;
+    robot_link_name_to_franka_frame["panda_link5"] = franka::Frame::kJoint5;
+    robot_link_name_to_franka_frame["panda_link6"] = franka::Frame::kJoint6;
+    robot_link_name_to_franka_frame["panda_link7"] = franka::Frame::kJoint7;
+    robot_link_name_to_franka_frame["panda_hand"] = franka::Frame::kFlange;
 
-    // Define mode of operation
+    // questa è la modalità di funzionamento del controller, se con robot reale o in simulazione
     if (use_robot) {
       mode = Mode::franka;
       RCLCPP_INFO_STREAM(this->get_logger(), "Using mode franka");
@@ -329,7 +327,7 @@ public:
     auto set_cartesian_cmd =
         [this](
             const panda_interfaces::msg::CartesianCommand::ConstSharedPtr msg) {
-          desired_cartesian_box.try_set(*msg);
+          desired_cartesian_box.try_set(*msg);  //Metti i messaggi nella lista thread safe
         };
 
     auto set_external_tau_cb = [this](const JointTorqueMeasureStamped msg) {
@@ -419,7 +417,7 @@ public:
               if (current_joints_config_vec.array().isZero()) {
                 response->result = false;
                 panda_franka_state.mut.unlock();
-                RCLCPP_ERROR(this->get_logger(), "Joint state is near 0");
+                RCLCPP_ERROR(this->get_logger(), "Joint state is near 0"); //Se la posizione dei giunti è tutta zero non va bene 
                 return;
               }
               std::lock_guard<std::mutex> mut(desired_cartesian_mutex);
@@ -474,11 +472,13 @@ public:
         std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
   }
 
-  CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
 
+
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &) override { //Callback return è il tipo di ritorno della funzione on_configure (Success, Failure, etc), lo stato è lo stato di partenza
     using namespace std::chrono_literals;
     debug_pub.create_pubs(shared_from_this(),
-                          panda_interface_names::CONTROLLER_PUBLISHER_QOS());
+                          panda_interface_names::CONTROLLER_PUBLISHER_QOS());  //è un nodo suo per creare il publisher di debug
 
     // Reconfigure parameters
     Kp = this->get_parameter("Kp").as_double();
@@ -488,7 +488,7 @@ public:
     Kd_rot = this->get_parameter("Kd_rot").as_double();
     Md_rot = this->get_parameter("Md_rot").as_double();
     control_loop_rate = std::make_shared<rclcpp::Rate>(
-        this->get_parameter("control_freq").as_double(), this->get_clock());
+        this->get_parameter("control_freq").as_double(), this->get_clock());  //questo è il rate del ciclo di controllo definito come costate nel file
     clamp = this->get_parameter("clamp").as_bool();
 
     RCLCPP_INFO_STREAM(
@@ -582,6 +582,7 @@ public:
       joint_state_to_pub.name = std::vector<std::string>{
           "joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "joint7"};
 
+      //adesso viene definita la callback che viene eseguita ad ogni ciclo di controllo e mandata alla funzione control della libreria franka (controlla)
       robot_control_callback =
           [this, get_jacob](const franka::RobotState &state,
                             franka::Duration dt) -> franka::Torques {
@@ -598,7 +599,7 @@ public:
           update_cartesian_cmd();
         }
 
-        // Get q and q_dot
+        // Get q and q_dot eventualmente filtrati 
         //
         Eigen::Map<const Eigen::Vector<double, 7>> current_joints_config_vec(
             state.q.data());
@@ -624,6 +625,7 @@ public:
 
         // Get current pose and jacobian according to frame in contact or last
         // frame if not in compliance mode
+        //in pratica va a calcolare qual è la posa di un particolare link o dell'end effector in base a quale frame è stato toccato dall'operatore umano
         if (compliance_mode.load() && last_joint_contact_frame.has_value()) {
 
           current_pose = geom_utils::get_pose(panda_franka_model->pose(
@@ -647,7 +649,7 @@ public:
         current_quat = quaternionContinuity(current_quat, old_quaternion);
         old_quaternion = current_quat;
 
-        // Calculate pose error
+        // Calculate pose error con la classica formula
         Eigen::AngleAxisd error_angle_axis;
         {
           Eigen::Quaterniond desired_quat{};
@@ -782,35 +784,19 @@ public:
         {
           // clang-format off
           if (compliance_mode.load()) {
-
-            y = jacobian_pinv * MD_1 *
-                (
-                  -KD * current_twist 
-                  - MD *
-                   get_j_dot(get_jacob, current_joints_config_vec,
-                             current_joints_speed) *
-                   current_joints_speed
-                  - h_e
-                );
+            y = jacobian_pinv * MD_1 *(-KD * current_twist - MD * get_j_dot(get_jacob, current_joints_config_vec,current_joints_speed) * current_joints_speed- h_e);  
+            //direttamente sui giunti 
           } else {
-            y_cartesian =
-                (
-                  MD * desired_accel_vec +
-                  KD * error_twist + KP * error_pose_vec 
-                  -MD *
-                      get_j_dot(get_jacob, current_joints_config_vec,
-                                current_joints_speed) *
-                      current_joints_speed
-                  - h_e
-                );
-            y = jacobian_pinv * MD_1 * y_cartesian;
+            y_cartesian =(MD * desired_accel_vec + KD * error_twist + KP * error_pose_vec - MD * 
+                         get_j_dot(get_jacob,current_joints_config_vec,current_joints_speed)*current_joints_speed - h_e);
+                         
+            y = jacobian_pinv * MD_1 * y_cartesian; //lo devo calcolare prima in cartesiano e poi sui giunti
           }
           // clang-format on
         }
 
-        Eigen::Vector<double, 7> control_input_vec =
-            mass_matrix * y + coriolis + extern_tau -
-            KD_J * current_joints_speed;
+        //calcolo il vettore di controllo da inviare al robot
+        Eigen::Vector<double, 7> control_input_vec = mass_matrix * y + coriolis + extern_tau - KD_J * current_joints_speed;
 
         // Clamp tau
         clamp_control(control_input_vec);
@@ -833,7 +819,7 @@ public:
                                     "Torque abs value over limit ("
                                         << percentage_effort_safe_limit * 100.0
                                         << "%)");
-                panda_franka->stop();
+                panda_franka->stop(); //Serve a fermare il robot in modo sicuro, fermando il controllore
                 start_flag.store(false);
                 return franka::MotionFinished(franka::Torques(state.tau_J_d));
               } else if (abs(state.dq[i]) >= joint_speed_safe_limit) {
@@ -868,7 +854,7 @@ public:
                                   "Finished safety checks first time");
         }
 
-        // Apply control
+        // Apply control input finalmente
 
         RCLCPP_INFO_STREAM_ONCE(this->get_logger(), "Filling tau command");
         last_control_input = control_input_vec;
@@ -994,7 +980,7 @@ public:
     switch (mode) {
     case Mode::franka: {
 
-      publish_static_transforms();
+      publish_static_transforms(); //serve a pubblicare le tf statiche del robot dal base link al link world
 
       if (!realtime_tools::has_realtime_kernel()) {
         RCLCPP_ERROR(this->get_logger(),
@@ -1004,8 +990,10 @@ public:
       }
 
       // Initializing control setpoint variables
+      //Setta target = posizione attuale + velocità=0" per evitare salti durante mode switch!
       init_cartesian_cmd();
 
+      // Aggiorna il comando cartesiano
       update_cartesian_cmd();
 
       RCLCPP_INFO_STREAM(this->get_logger(),
@@ -1046,6 +1034,7 @@ public:
 
       start_flag.store(true);
 
+      //avvia un thread separato per il controllo in real time che sia un thread che avrà la priorità real time 
       control_thread = std::thread{[this]() {
         // Configuring real time thread
         try {
@@ -1059,7 +1048,7 @@ public:
             enable_frame_publishing_client->async_send_request(
                 std::make_shared<std_srvs::srv::SetBool_Request>(req));
             poses_publish_loop();
-          }}.detach();
+          }}.detach();  //detach per far partire il thread in background indipendente da quello principale
 
           // Applied external force frame
           std::thread{[this]() {
@@ -1075,7 +1064,7 @@ public:
                   try {
                     auto last_joint_contact_frame_new =
                         robot_link_name_to_franka_frame[human_contact_info
-                                                            .joint_frame.data];
+                                                            .joint_frame.data];  //vede quale giunto è stato toccato e lo converte in franka frame (ossia nel nome corretto)
 
                     // If the frame in contact is in the list we store its value
                     // and change gains, when the operator doesnt touch anymore
@@ -1145,7 +1134,7 @@ public:
             rclcpp::shutdown();
           }
           // clang-format on
-          panda_franka->control(robot_control_callback);
+          panda_franka->control(robot_control_callback);    //qui parte il ciclo di controllo vero e proprio, che richiama la callback ad ogni iterazione usando la funzione di libfranka (lo fa internamente la libreria)
         } catch (const franka::Exception &ex) {
 
           start_flag.store(false);
@@ -1167,8 +1156,7 @@ public:
     case Mode::sim: {
       // Start control loop thread
       start_flag.store(true);
-      control_thread =
-          std::thread{std::bind(&ImpedanceController::control, this)};
+      control_thread =std::thread{std::bind(&ImpedanceController::control, this)};
       RCLCPP_INFO(this->get_logger(),
                   "Started control thread with simulated robot");
       break;
@@ -1193,7 +1181,7 @@ public:
       }
     }
     if (control_thread.joinable()) {
-      control_thread.join();
+      control_thread.join();   //serve a rendere sicuro un thread prima di chiuderlo
     }
     return CallbackReturn::SUCCESS;
   }
@@ -1232,11 +1220,12 @@ public:
    * @brief This function publishes the static Tf representing the base link of
    * the robot wrt to the world Tf
    */
+  //base link in terna world (quindi dovrebbe essere b_T_0)
   void publish_static_transforms() {
     geometry_msgs::msg::TransformStamped world_to_base_transform_static;
     world_to_base_transform_static.header.stamp = this->now();
     world_to_base_transform_static.header.frame_id = "world";
-    world_to_base_transform_static.child_frame_id = "fr3_link0";
+    world_to_base_transform_static.child_frame_id = "panda_link0";
 
     // Assuming world_base_link parameter order is x, y, z, w, x, y, z for
     // quaternion
@@ -1251,7 +1240,7 @@ public:
 
     static_tf_broadcaster->sendTransform(world_to_base_transform_static);
     RCLCPP_INFO(this->get_logger(),
-                "Published static world -> fr3_link0 transform.");
+                "Published static world -> panda_link0 transform.");
   }
 
   /**
@@ -1311,62 +1300,60 @@ public:
     }
   }
 
+
+//Qui iniziano le dichiarazioni delle variabili private della classe come membri
+
 private:
-  // Mode of operation of the controller
-  Mode mode = Mode::sim;
+  // Mode of operation of the controller (Franka real robot or simulation)
+  Mode mode = Mode::sim; 
   // Subscribers
-  rclcpp::Subscription<JointState>::SharedPtr robot_joint_states_sub{};
-  rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr
-      cartesian_cmd_sub{};
-  rclcpp::Subscription<JointTorqueMeasureStamped>::SharedPtr external_tau_sub{};
-  rclcpp::Subscription<panda_interfaces::msg::HumanContact>::SharedPtr
-      human_contact_sub{};
+  rclcpp::Subscription<JointState>::SharedPtr robot_joint_states_sub{}; //è il subscriber che legge la posizione attuale del robot e la salva in current_joint_config
+  rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr cartesian_cmd_sub{};  //legge i comandi in cartesiano
+  rclcpp::Subscription<JointTorqueMeasureStamped>::SharedPtr external_tau_sub{}; //legge le coppie esterne misurate dal robot
+  rclcpp::Subscription<panda_interfaces::msg::HumanContact>::SharedPtr human_contact_sub{}; //legge le info sul contatto umano (con quale giunto è in contatto ad esempio)
 
   // Commands publisher
   // Used in simulation to control the robot
   Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub{};
 
   // Robot pose publisher and debug
-  realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
-      robot_pose_pub{};
-  realtime_tools::RealtimePublisher<sensor_msgs::msg::JointState>::SharedPtr
-      joint_states_pub{};
-  Publisher<geometry_msgs::msg::PoseArray>::SharedPtr robot_frame_poses_pub{};
+  realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr robot_pose_pub{}; //pubblica la posa dell'end effector
+  realtime_tools::RealtimePublisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_pub{}; //pubblica la posizione dei giunti
+  Publisher<geometry_msgs::msg::PoseArray>::SharedPtr robot_frame_poses_pub{};  //pubblica le pose di tutti i link del robot dalla funzione poses_publish_loop
 
   // Services
-  rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr
-      compliance_mode_server;
+  rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr compliance_mode_server;
 
   // Clients
-  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr
-      enable_frame_publishing_client;
+  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr enable_frame_publishing_client;
 
   // Robot related variables
-  panda::RobotModel panda;
+  panda::RobotModel panda; //oggetto panda che contiene le info cinematiche e dinamiche del robot definita in panda_robot_model.hpp
   // Robot object used to communicate with the FCI interface
-  std::optional<franka::Robot> panda_franka;
+  std::optional<franka::Robot> panda_franka; //è l'oggetto robot che comunica con il robot reale tramite la FCI
   // Robot model given by the FCI
-  std::optional<franka::Model> panda_franka_model;
-  robot_state panda_franka_state;
+  std::optional<franka::Model> panda_franka_model; //modello dinamico del robot fornito dalla FCI
+  robot_state panda_franka_state; //al suo interno ha un mutex e lo stato attuale del robot (franka::RobotState)
+
   // Robot load variables
   double load = 0.0;
   std::array<double, 3> F_x_Cload{0.0, 0.0, 0.0};
   std::array<double, 9> load_inertia{0.0, 0.0, 0.0, 0.0, 0.0,
                                      0.0, 0.0, 0.0, 0.0};
-  panda_interfaces::msg::HumanContact human_contact_info{};
-  std::optional<franka::Frame> last_joint_contact_frame{std::nullopt};
-  Eigen::Quaterniond old_quaternion;
-  Eigen::Matrix<double, 6, 7> jacobian = Eigen::Matrix<double, 6, 7>::Zero();
+  panda_interfaces::msg::HumanContact human_contact_info{}; //variabile che contiene le info sul contatto umano
+  std::optional<franka::Frame> last_joint_contact_frame{std::nullopt}; //enumera l'ultimo giunto che è stato toccato dall'operatore
+  Eigen::Quaterniond old_quaternion; //usata per la continuità del quaternione
+  Eigen::Matrix<double, 6, 7> jacobian = Eigen::Matrix<double, 6, 7>::Zero(); //jacobiano del robot
 
-  std::mutex joint_state_mutex;
-  JointState::SharedPtr current_joint_config{nullptr};
-  Eigen::Vector<double, 7> extern_tau{};
-  Eigen::Vector<double, 7> extern_tau_filtered =
-      Eigen::Vector<double, 7>::Zero();
-  Eigen::Vector<double, 6> h_e{};
-  Eigen::Vector<double, 6> h_e_measured{};
-  std::vector<double> world_base_link;
+  std::mutex joint_state_mutex; //mutex per proteggere la variabile current_joint_config
+  JointState::SharedPtr current_joint_config{nullptr}; //variabile che contiene la posizione attuale dei giunti del robot
+  Eigen::Vector<double, 7> extern_tau{}; //coppie esterne
+  Eigen::Vector<double, 7> extern_tau_filtered = Eigen::Vector<double, 7>::Zero(); //coppie esterne filtrate
+  Eigen::Vector<double, 6> h_e{}; //forza esterna calcolata all'end effector
+  Eigen::Vector<double, 6> h_e_measured{}; //forza esterna misurata all'end effector
+  std::vector<double> world_base_link; //posizione del base link del robot nel mondo inizializzata dal parametro ROS2 e inizialmente coincidente con l'origine del mondo
 
+  // TF related variables
   std::unique_ptr<tf2_ros::Buffer> tf_buffer;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
@@ -1380,23 +1367,21 @@ private:
    * the other nodes through Publishers
    *
    */
-  std::function<franka::Torques(const franka::RobotState &, franka::Duration)>
-      robot_control_callback;
-  JointState joint_state_to_pub{};
+  std::function<franka::Torques(const franka::RobotState &, franka::Duration)>robot_control_callback; //callback di controllo vero e proprio che devo dichiarare come funzione se voglio definirla nel on_configure e usarla nel on_activate
+  JointState joint_state_to_pub{}; //variabile che contiene la posizione, velocità e coppia dei giunti da pubblicare e inizializzo tutto a zero grazie alle parentesi vuote
 
-  std::mutex desired_pose_mutex;
+  std::mutex desired_pose_mutex; //mutex per proteggere la variabile desired_pose
   std::mutex desired_twist_mutex;
   std::mutex desired_accel_mutex;
-  Pose desired_pose{};
+  Pose desired_pose{}; //ricordati gli aliasing messi all'inizio: è geometry_msgs::msg::Pose
   Twist desired_twist{};
   Accel desired_accel{};
-  Eigen::Vector<double, 6> desired_twist_vec = Eigen::Vector<double, 6>::Zero();
-  Eigen::Vector<double, 6> desired_accel_vec = Eigen::Vector<double, 6>::Zero();
+  Eigen::Vector<double, 6> desired_twist_vec = Eigen::Vector<double, 6>::Zero(); //vettore 6d della velocità desiderata in cartesiano
+  Eigen::Vector<double, 6> desired_accel_vec = Eigen::Vector<double, 6>::Zero(); //vettore 6d dell'accelerazione desiderata
 
-  Eigen::Vector<double, 7> current_joints_speed =
-      Eigen::Vector<double, 7>::Zero();
+  Eigen::Vector<double, 7> current_joints_speed = Eigen::Vector<double, 7>::Zero(); //vettore 7d della velocità attuale dei giunti
 
-  panda_interfaces::msg::CartesianCommand desired_cartesian_cmd{};
+  panda_interfaces::msg::CartesianCommand desired_cartesian_cmd{}; //variabile che contiene il comando cartesiano desiderato
   std::mutex desired_cartesian_mutex;
   std::optional<panda_interfaces::msg::CartesianCommand>
       desired_cartesian_cmd_opt{std::nullopt};
@@ -1410,10 +1395,10 @@ private:
   Eigen::VectorXd velocity_limits{};
   Eigen::VectorXd acceleration_limits{};
 
-  const std::string frame_id_name{"fr3_joint8"};
-  const std::string robot_base_frame_name{"fr3_link0"};
+  const std::string frame_id_name{"panda_hand"};
+  const std::string robot_base_frame_name{"panda_link0"};
 
-  // Map Franka frames to child frame names for TF publishing
+  // Map Franka frames to child frame names for TF publishing (sono delle mappe)
   std::map<franka::Frame, std::string> franka_frame_enum_to_link_name;
   std::map<std::string, franka::Frame> robot_link_name_to_franka_frame;
 
@@ -1424,15 +1409,15 @@ private:
   double Md{};
   double Kp_rot{};
   double Kd_rot{};
-  double Md_rot{};
+  double Md_rot{}; //usando la zero inizialization per tutto
   Eigen::Matrix<double, 6, 6> KP{};
   Eigen::Matrix<double, 6, 6> KD{};
   Eigen::Matrix<double, 6, 6> MD{};
   Eigen::Matrix<double, 6, 6> MD_1{};
-  Eigen::Matrix<double, 7, 7> KD_J{};
-  double joints_speed_cutoff_freq{30.0};
+  Eigen::Matrix<double, 7, 7> KD_J{}; 
+  double joints_speed_cutoff_freq{30.0}; //anche per non inizializzare a zero è più sicuro usare la brace initialization
   double external_tau_cutoff_freq{30.0};
-  double joint_speed_safe_limit{};
+  double joint_speed_safe_limit{}; //preso come parametro come anche quelli sotto
   double percentage_effort_safe_limit{};
   double error_pose_norm_safe_limit{};
   std::thread control_thread;
@@ -1446,11 +1431,11 @@ private:
   // Human detection
   human_presence::HumanPresentState presence_state;
 
-  void set_kp() {
 
+  //Set function
+  void set_kp() {  //lo fa in modo tale che la transizione sia smooth
     Eigen::Vector<double, 6> KP_{Kp, Kp, Kp, Kp_rot, Kp_rot, Kp_rot};
-    Eigen::Matrix<double, 6, 6> final_KP =
-        Eigen::Matrix<double, 6, 6>::Identity();
+    Eigen::Matrix<double, 6, 6> final_KP = Eigen::Matrix<double, 6, 6>::Identity();
     final_KP.diagonal() = KP_;
     if (final_KP == KP) {
       RCLCPP_INFO_STREAM(this->get_logger(), "Set KP: " << KP);
@@ -1470,6 +1455,7 @@ private:
     RCLCPP_INFO_STREAM(this->get_logger(), "Set KP: " << KP);
   }
 
+  
   void set_kd(double mul = 1.0) {
     Eigen::Vector<double, 6> KD_{Kd,           Kd,           Kd,
                                  Kd_rot * mul, Kd_rot * mul, Kd_rot * mul};
@@ -1505,10 +1491,8 @@ private:
                                    1.0 / (Md_rot * mul),
                                    1.0 / (Md_rot * mul)};
 
-    Eigen::Matrix<double, 6, 6> final_MD =
-        Eigen::Matrix<double, 6, 6>::Identity();
-    Eigen::Matrix<double, 6, 6> final_MD_1 =
-        Eigen::Matrix<double, 6, 6>::Identity();
+    Eigen::Matrix<double, 6, 6> final_MD = Eigen::Matrix<double, 6, 6>::Identity();
+    Eigen::Matrix<double, 6, 6> final_MD_1 = Eigen::Matrix<double, 6, 6>::Identity();
     final_MD.diagonal() = MD_;
     final_MD_1.diagonal() = MD_1_;
     if (final_MD == MD && final_MD_1 == MD_1) {
@@ -1532,12 +1516,7 @@ private:
     RCLCPP_INFO_STREAM(this->get_logger(), "Set MD: " << MD);
   }
 
-  /**
-   * @brief Changes the value of the virtual mass and damping gains for the
-   * rotational part. Can be easily expanded to the translational gains.
-   *
-   * @param double mul = 1.0
-   */
+  //cambia il valore della massa virtuale e dei guadagni di smorzamento per la parte rotazionale
   void set_md_kd(double mul = 1.0) {
 
     Eigen::Vector<double, 6> MD_{Md,           Md,           Md,
@@ -1551,10 +1530,8 @@ private:
     double eta = Kd_rot / (2 * std::sqrt(Kp_rot * Md_rot));
     double Kd_rot_mod = 2 * eta * std::sqrt(Kp_rot * Md_rot * mul);
 
-    Eigen::Matrix<double, 6, 6> final_MD =
-        Eigen::Matrix<double, 6, 6>::Identity();
-    Eigen::Matrix<double, 6, 6> final_MD_1 =
-        Eigen::Matrix<double, 6, 6>::Identity();
+    Eigen::Matrix<double, 6, 6> final_MD = Eigen::Matrix<double, 6, 6>::Identity();
+    Eigen::Matrix<double, 6, 6> final_MD_1 = Eigen::Matrix<double, 6, 6>::Identity();
     final_MD.diagonal() = MD_;
     final_MD_1.diagonal() = MD_1_;
 
@@ -1592,10 +1569,8 @@ private:
 
   void set_kd_j() {
 
-    // Damping coefficient to handle joint drifts caused by 7th DOF not used
-    // in control law
+    // Damping coefficient to handle joint drifts caused by 7th DOF not used in control law
     double joint_damping = 10.0;
-    // double effort_ratio = 12.0 / 87.0;
     double effort_ratio = 0.6;
     Eigen::Vector<double, 7> KD_J_{joint_damping,
                                    joint_damping,
@@ -1604,8 +1579,8 @@ private:
                                    joint_damping * effort_ratio,
                                    joint_damping * effort_ratio,
                                    joint_damping * effort_ratio};
-    Eigen::Matrix<double, 7, 7> final_KD_J =
-        Eigen::Matrix<double, 7, 7>::Identity();
+
+    Eigen::Matrix<double, 7, 7> final_KD_J = Eigen::Matrix<double, 7, 7>::Identity();
     final_KD_J.diagonal() = KD_J_;
     if (final_KD_J == KD_J) {
       RCLCPP_INFO_STREAM(this->get_logger(), "Set KD_J: " << KD_J);
@@ -1654,26 +1629,21 @@ private:
           effort_speed_limits[i]) {
         if (control_input[i] - last_control_input[i] < 0.0) {
           control_input[i] =
-              last_control_input[i] - effort_speed_limits[i] * dt;
+              last_control_input[i] - effort_speed_limits[i] * dt; //diminusco al massimo di quanto posso diminuire
         } else {
           control_input[i] =
-              last_control_input[i] + effort_speed_limits[i] * dt;
+              last_control_input[i] + effort_speed_limits[i] * dt; //aumento al massimo di quanto posso aumentare
         }
       }
     }
   }
 
-  void clamp_vec(Eigen::VectorXd &vec, const Eigen::VectorXd &min_limits,
-                 const Eigen::VectorXd &max_limits) {
+  void clamp_vec(Eigen::VectorXd &vec, const Eigen::VectorXd &min_limits,const Eigen::VectorXd &max_limits) {
     for (int i = 0; i < vec.size(); ++i) {
       vec[i] = std::min(std::max(vec[i], min_limits[i]), max_limits[i]);
     }
   }
 
-  /**
-   * @brief Load joint limits based on the `panda` variable, depending on the
-   * URDF used for the robot. Loads the effort speed statically.
-   */
   void load_joint_limits() {
     RCLCPP_INFO(this->get_logger(), "Getting effort speed limits");
     effort_limits = panda.getModel().effortLimit;
@@ -1689,26 +1659,22 @@ private:
     joint_max_limits = panda.getModel().upperPositionLimit;
   }
 
-  void init_cartesian_cmd(const std::optional<Eigen::Vector<double, 7>>
-                              &current_joints_pos = std::nullopt) {
+  void init_cartesian_cmd(const std::optional<Eigen::Vector<double, 7>> &current_joints_pos = std::nullopt) {
     Pose desired_pose;
     if (mode == Mode::franka) {
       // Initializing control setpoint variables
       if (!start_flag.load()) {
-        desired_pose = geom_utils::get_pose(panda_franka_model.value().pose(
-            franka::Frame::kFlange, panda_franka->readOnce()));
+        desired_pose = geom_utils::get_pose(panda_franka_model.value().pose(franka::Frame::kFlange, panda_franka->readOnce()));
       } else if (current_joints_pos.has_value()) {
         franka::RobotState state;
         for (int i = 0; i < 7; i++) {
           state.q[i] = current_joints_pos.value()[i];
         }
-        desired_pose = geom_utils::get_pose(
-            panda_franka_model.value().pose(franka::Frame::kFlange, state));
+        desired_pose = geom_utils::get_pose(panda_franka_model.value().pose(franka::Frame::kFlange, state));
       }
     } else {
       if (current_joints_pos.has_value()) {
-        panda.computeAll(current_joints_pos.value(),
-                         Eigen::Vector<double, 7>::Zero());
+        panda.computeAll(current_joints_pos.value(),Eigen::Vector<double, 7>::Zero());
         desired_pose = panda.getPose(frame_id_name);
       } else {
         RCLCPP_ERROR(this->get_logger(),
@@ -1777,7 +1743,7 @@ void ImpedanceController::control() {
   Eigen::Matrix<double, 7, 6> jacobian_pinv;
   Eigen::Vector<double, 7> current_joints_config_vec;
   Eigen::Vector<double, 7> current_joints_speed =
-      Eigen::Vector<double, 7>::Zero();
+  Eigen::Vector<double, 7>::Zero();
   Eigen::Vector<double, 7> last_joints_speed = Eigen::Vector<double, 7>::Zero();
   Eigen::Matrix<double, 6, 7> jacobian;
   Eigen::Matrix<double, 6, 6> B_a;

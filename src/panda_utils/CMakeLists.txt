@@ -14,7 +14,7 @@ find_package(rclcpp REQUIRED)
 find_package(panda_interfaces REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
-find_package(tf2_eigen REQUIRED)
+find_package(tf2_eigen REQUIRED) #Non serve chiedere anche Eigen3 perché tf2_eigen lo fa già indirettamente
 find_package(tf2 REQUIRED)
 find_package(tf2_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -22,37 +22,36 @@ find_package(pinocchio REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(realtime_tools REQUIRED)
-find_package(image_processing REQUIRED)
+# find_package(image_processing REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 include_directories(
   include
   /opt/ros/jazzy/include
   /opt/ros/jazzy/include/pinocchio
-  ~/libfranka/include/
-  ${CMAKE_CURRENT_SOURCE_DIR}/../image_processing/include
+  # ~/libfranka/include/
 )
 
 
-link_directories(
-  ~/libfranka/build/
-)
+# link_directories(
+#   ~/libfranka/build/
+# )
 
+#Vengono definite una serie di librerie con le loro dipendenze
 add_library(robot_model
   src/robot_model.cpp
 )
-
-add_library(debug_publisher
-  src/debug_publisher.cpp
-)
-
 target_link_libraries(robot_model
-  ${pinocchio_LIBRARIES}
-)
+  ${pinocchio_LIBRARIES})
 
 ament_target_dependencies(robot_model
   ament_index_cpp
   tf2_eigen
+)
+
+add_library(debug_publisher
+  src/debug_publisher.cpp
 )
 
 ament_target_dependencies(debug_publisher
@@ -68,12 +67,13 @@ target_link_libraries(debug_publisher
   franka
 )
 
+#Vengono definite una serie di eseguibili con le loro dipendenze
 add_executable(send_joints_effort_server ./src/send_joints_effort_cmd.cpp)
 ament_target_dependencies(send_joints_effort_server rclcpp panda_interfaces std_msgs tf2_eigen)
 target_link_libraries(send_joints_effort_server franka)
 
-add_executable(send_joints_effort_simple_client ./examples/send_joints_effort_cmd_client.cpp)
-ament_target_dependencies(send_joints_effort_simple_client rclcpp panda_interfaces std_msgs tf2_eigen)
+# add_executable(send_joints_effort_simple_client ./examples/send_joints_effort_cmd_client.cpp)
+# ament_target_dependencies(send_joints_effort_simple_client rclcpp panda_interfaces std_msgs tf2_eigen)
 
 add_executable(joint_traj ./src/joint_traj.cpp)
 ament_target_dependencies(joint_traj rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools)
@@ -87,50 +87,50 @@ ament_target_dependencies(loop_cart_traj rclcpp panda_interfaces std_msgs tf2_ei
 add_executable(stop_traj ./src/exponential_cart_traj.cpp)
 ament_target_dependencies(stop_traj rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools)
 
-add_executable(human_presence ./src/human_presence.cpp ./src/constants.cpp)
-ament_target_dependencies(human_presence rclcpp panda_interfaces std_msgs std_srvs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools image_processing)
+# add_executable(human_presence ./src/human_presence.cpp ./src/constants.cpp)
+# ament_target_dependencies(human_presence rclcpp panda_interfaces std_msgs std_srvs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools image_processing)
 
-add_executable(frame_publisher ./src/frame_publisher.cpp ./src/constants.cpp)
-ament_target_dependencies(frame_publisher rclcpp panda_interfaces std_msgs std_srvs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools image_processing)
+# add_executable(frame_publisher ./src/frame_publisher.cpp ./src/constants.cpp)
+# ament_target_dependencies(frame_publisher rclcpp panda_interfaces std_msgs std_srvs tf2_eigen tf2 tf2_msgs sensor_msgs realtime_tools image_processing)
 
-add_executable(demo ./examples/demo.cpp ./src/constants.cpp)
-ament_target_dependencies(demo rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs image_processing std_srvs)
-target_link_libraries(demo robot_model)
+# add_executable(demo ./examples/demo.cpp ./src/constants.cpp)
+# ament_target_dependencies(demo rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs image_processing std_srvs)
+# target_link_libraries(demo robot_model)
 
 add_executable(inverse_dynamics_controller ./src/inverse_dynamics_controller.cpp)
 ament_target_dependencies(inverse_dynamics_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools)
 target_link_libraries(inverse_dynamics_controller robot_model franka)
 
-add_executable(cart_traj_example ./examples/cart_traj_example.cpp)
-ament_target_dependencies(cart_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
-target_link_libraries(cart_traj_example robot_model)
+# add_executable(cart_traj_example ./examples/cart_traj_example.cpp)
+# ament_target_dependencies(cart_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+# target_link_libraries(cart_traj_example robot_model)
 
-add_executable(loop_cart_traj_example ./examples/loop_cart_traj_example.cpp)
-ament_target_dependencies(loop_cart_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
-target_link_libraries(loop_cart_traj_example robot_model)
+# add_executable(loop_cart_traj_example ./examples/loop_cart_traj_example.cpp)
+# ament_target_dependencies(loop_cart_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+# target_link_libraries(loop_cart_traj_example robot_model)
 
-add_executable(joint_traj_example ./examples/joint_traj_example.cpp)
-ament_target_dependencies(joint_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
+# add_executable(joint_traj_example ./examples/joint_traj_example.cpp)
+# ament_target_dependencies(joint_traj_example rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle)
 
 add_executable(impedance_controller ./src/impedance_controller.cpp ./src/constants.cpp)
-ament_target_dependencies(impedance_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools tf2_geometry_msgs std_srvs)
+ament_target_dependencies(impedance_controller rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools tf2_geometry_msgs std_srvs geometry_msgs)
 target_link_libraries(impedance_controller robot_model franka debug_publisher)
 
 install(TARGETS
   send_joints_effort_server
-  send_joints_effort_simple_client
+  # send_joints_effort_simple_client
   joint_traj
   cart_traj
   stop_traj
   loop_cart_traj
-  demo
+  # demo
   inverse_dynamics_controller
-  cart_traj_example
-  joint_traj_example
+  # cart_traj_example
+  # joint_traj_example
   impedance_controller
-  loop_cart_traj_example
-  human_presence
-  frame_publisher
+  # loop_cart_traj_example
+  # human_presence
+  # frame_publisher
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -140,8 +140,8 @@ install(
   DESTINATION share/${PROJECT_NAME}/launch
 )
 
-ament_export_include_directories(include)
-ament_export_dependencies(tf2_eigen)
+ament_export_include_directories(include) #esporta la directory include come pubblica così altri pacchetti che dipendono da panda_utils possono accedere ai suoi header file 
+ament_export_dependencies(tf2_eigen) #esporta la dipendenza tf2_eigen così altri pacchetti che dipendono da panda_utils non devono rispecificarla
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

@@ -264,3 +264,17 @@ struct decay_laws {
            (b / beta) * (1 - exp(-beta * t));
   }
 };
+
+inline Eigen::Quaterniond quaternionContinuity(const Eigen::Quaterniond& q, const Eigen::Quaterniond& oldQ)
+{
+  auto tmp = q.vec().transpose() * oldQ.vec();
+  if (tmp < -0.01)
+  {
+    Eigen::Quaterniond out(q);
+    out.vec() = -out.vec();
+    out.w() = -out.w();
+    return out;
+  }
+  return q;
+
+}
