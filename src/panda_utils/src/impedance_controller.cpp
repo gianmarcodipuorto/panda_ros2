@@ -159,7 +159,6 @@ void print_initial_franka_state(const franka::RobotState state,
   }
   Pose current_pose =
       geom_utils::get_pose(model.pose(franka::Frame::kFlange, state)); //chiamo il metodo pose della libreria franka che mi restituisce la posa del flange rispetto all'origine del robot e poi usa una funzione di utility per convertirla in un messaggio ROS
-      //dipende dall'URDF del robot che è stato caricato nel modello  
       RCLCPP_INFO_STREAM_ONCE(
       logger, "Current position: ["
                   << current_pose.position.x << ", " << current_pose.position.y
@@ -180,11 +179,10 @@ void print_initial_franka_state(const franka::RobotState state,
                   << current_pose.orientation.x << ", "
                   << current_pose.orientation.y << ", "
                   << current_pose.orientation.z << "]");
-  auto jacobian = geom_utils::get_jacobian(
-      model.zeroJacobian(franka::Frame::kFlange, state));
+  auto jacobian = geom_utils::get_jacobian(model.zeroJacobian(franka::Frame::kFlange, state));
   RCLCPP_INFO_STREAM_ONCE(logger, "Current jacobian: [" << jacobian << "]");
 
-  // B(q) calcolata dal modello
+  // B(q) letta dal modello
   std::array<double, 49> mass_matrix_raw = model.mass(state);
   Eigen::Matrix<double, 7, 7> mass_matrix;
   for (size_t i = 0; i < 7; i++) {
@@ -242,7 +240,7 @@ public:
   ImpedanceController(const std::string urdf_robot_path = DEFAULT_URDF_PATH)
       : rclcpp_lifecycle::LifecycleNode(
             panda_interface_names::inverse_dynamics_controller_node_name),
-        panda(urdf_robot_path, true) {
+        panda(urdf_robot_path, true) {  //serve ad inizializzar il membro panda
 
     // Declare parameters
     this->declare_parameter<double>("Kp", 50.0);
@@ -272,19 +270,14 @@ public:
     Md_rot = this->get_parameter("Md_rot").as_double();
 
     // Safe limits
-    joint_speed_safe_limit =
-        this->get_parameter("safe_joint_speed").as_double();
-    percentage_effort_safe_limit =
-        this->get_parameter("safe_effort_perc").as_double();
-    error_pose_norm_safe_limit =
-        this->get_parameter("safe_error_pose_norm").as_double();
-    control_loop_rate = std::make_shared<rclcpp::Rate>(
-        this->get_parameter("control_freq").as_double(), this->get_clock());
+    joint_speed_safe_limit = this->get_parameter("safe_joint_speed").as_double();
+    percentage_effort_safe_limit = this->get_parameter("safe_effort_perc").as_double();
+    error_pose_norm_safe_limit = this->get_parameter("safe_error_pose_norm").as_double();
+    control_loop_rate = std::make_shared<rclcpp::Rate>(this->get_parameter("control_freq").as_double(), this->get_clock());
     clamp = this->get_parameter("clamp").as_bool();
     bool use_robot = this->get_parameter("use_robot").as_bool();
     bool use_franka_sim = this->get_parameter("use_franka_sim").as_bool();
-    this->get_parameter<std::vector<double>>("world_base_link",
-                                             world_base_link);
+    this->get_parameter<std::vector<double>>("world_base_link",world_base_link);
 
     franka_frame_enum_to_link_name[franka::Frame::kJoint1] = "panda_link1";
     franka_frame_enum_to_link_name[franka::Frame::kJoint2] = "panda_link2";
@@ -477,8 +470,7 @@ public:
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State &) override { //Callback return è il tipo di ritorno della funzione on_configure (Success, Failure, etc), lo stato è lo stato di partenza
     using namespace std::chrono_literals;
-    debug_pub.create_pubs(shared_from_this(),
-                          panda_interface_names::CONTROLLER_PUBLISHER_QOS());  //è un nodo suo per creare il publisher di debug
+    debug_pub.create_pubs(shared_from_this(),panda_interface_names::CONTROLLER_PUBLISHER_QOS());  //è un nodo suo per creare il publisher di debug
 
     // Reconfigure parameters
     Kp = this->get_parameter("Kp").as_double();
@@ -487,8 +479,7 @@ public:
     Kp_rot = this->get_parameter("Kp_rot").as_double();
     Kd_rot = this->get_parameter("Kd_rot").as_double();
     Md_rot = this->get_parameter("Md_rot").as_double();
-    control_loop_rate = std::make_shared<rclcpp::Rate>(
-        this->get_parameter("control_freq").as_double(), this->get_clock());  //questo è il rate del ciclo di controllo definito come costate nel file
+    control_loop_rate = std::make_shared<rclcpp::Rate>(this->get_parameter("control_freq").as_double(), this->get_clock());  //questo è il rate del ciclo di controllo definito come costate nel file
     clamp = this->get_parameter("clamp").as_bool();
 
     RCLCPP_INFO_STREAM(
@@ -1383,10 +1374,8 @@ private:
 
   panda_interfaces::msg::CartesianCommand desired_cartesian_cmd{}; //variabile che contiene il comando cartesiano desiderato
   std::mutex desired_cartesian_mutex;
-  std::optional<panda_interfaces::msg::CartesianCommand>
-      desired_cartesian_cmd_opt{std::nullopt};
-  realtime_tools::RealtimeThreadSafeBox<panda_interfaces::msg::CartesianCommand>
-      desired_cartesian_box{};
+  std::optional<panda_interfaces::msg::CartesianCommand> desired_cartesian_cmd_opt{std::nullopt};
+  realtime_tools::RealtimeThreadSafeBox<panda_interfaces::msg::CartesianCommand> desired_cartesian_box{};
 
   Eigen::VectorXd effort_limits{};
   Eigen::VectorXd effort_speed_limits{};

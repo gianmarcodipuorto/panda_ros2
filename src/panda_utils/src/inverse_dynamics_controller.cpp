@@ -9,7 +9,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "multibody/fwd.hpp"
-#include "panda_interfaces/msg/cartesian_command.hpp"
+//#include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
 #include "panda_interfaces/msg/joints_command.hpp"
 #include "panda_interfaces/msg/joints_effort.hpp"
@@ -75,9 +75,8 @@ struct debug_data {
   franka::RobotState robot_state;
   std::array<double, 7> gravity;
 };
-
-geometry_msgs::msg::Pose
-convertMatrixToPose(const std::array<double, 16> &tf_matrix) {
+// Function to convert a 4x4 transformation matrix to a geometry_msgs::Pose
+geometry_msgs::msg::Pose convertMatrixToPose(const std::array<double, 16> &tf_matrix) {
   Eigen::Matrix4d T = Eigen::Map<const Eigen::Matrix4d>(tf_matrix.data());
 
   Eigen::Vector3d translation = T.block<3, 1>(0, 3);
@@ -103,10 +102,8 @@ convertMatrixToPose(const std::array<double, 16> &tf_matrix) {
 class InverseDynamicsController : public rclcpp_lifecycle::LifecycleNode {
 
 public:
-  InverseDynamicsController(
-      const std::string urdf_robot_path = DEFAULT_URDF_PATH)
-      : rclcpp_lifecycle::LifecycleNode(
-            panda_interface_names::inverse_dynamics_controller_node_name),
+  InverseDynamicsController(const std::string urdf_robot_path = DEFAULT_URDF_PATH)
+      : rclcpp_lifecycle::LifecycleNode(panda_interface_names::inverse_dynamics_controller_node_name),
         panda(urdf_robot_path, true) {
 
     // Declare parameters
@@ -123,17 +120,14 @@ public:
     Kp = this->get_parameter("Kp").as_double();
     Kd = this->get_parameter("Kd").as_double();
     Md = this->get_parameter("Md").as_double();
-    control_loop_rate = std::make_shared<rclcpp::Rate>(
-        this->get_parameter("control_freq").as_double(), this->get_clock());
+    control_loop_rate = std::make_shared<rclcpp::Rate>(this->get_parameter("control_freq").as_double(), this->get_clock());
     clamp = this->get_parameter("clamp").as_bool();
     use_robot = this->get_parameter("use_robot").as_bool();
     use_franka_sim = this->get_parameter("use_franka_sim").as_bool();
 
     if (use_robot) {
       panda_franka = franka::Robot(this->get_parameter("robot_ip").as_string());
-      RCLCPP_INFO_STREAM(this->get_logger(),
-                         "Connected to robot with ip "
-                             << this->get_parameter("robot_ip").as_string());
+      RCLCPP_INFO_STREAM(this->get_logger(),"Connected to robot with ip "<< this->get_parameter("robot_ip").as_string());
       double load = 0.0;
       std::array F_x_Cload{0.0, 0.0, 0.0};
       std::array load_inertia{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -141,8 +135,7 @@ public:
     }
 
     // Taking joint limits
-    // WARNING: Joint limits are defined in the urdf, change their value into
-    // the urdf
+    // WARNING: Joint limits are defined in the urdf, change their value into the urdf
 
     RCLCPP_INFO(this->get_logger(), "Getting effort speed limits");
     effort_limits = panda.getModel().effortLimit;
@@ -157,48 +150,29 @@ public:
     joint_min_limits = panda.getModel().lowerPositionLimit;
     joint_max_limits = panda.getModel().upperPositionLimit;
 
-    // joint_min_limits = Eigen::Vector<double, 7>{
-    //     -2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973};
-    //
-    // joint_max_limits = Eigen::Vector<double, 7>{
-    //   2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973};
+    // joint_min_limits = Eigen::Vector<double, 7>{-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973};
+    // joint_max_limits = Eigen::Vector<double, 7>{ 2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973};
 
     RCLCPP_INFO(this->get_logger(), "Getting velocity limits");
     velocity_limits = panda.getModel().velocityLimit;
-    // velocity_limits = Eigen::Vector<double,
-    // 7>{2.1750, 2.1750, 2.1750, 2.1750,
-    //                                            2.6100, 2.6100, 2.6100};
+    // velocity_limits = Eigen::Vector<double,7>{2.1750, 2.1750, 2.1750, 2.1750, 2.6100, 2.6100, 2.6100};
 
     RCLCPP_INFO(this->get_logger(), "Getting acceleration limits");
-    // acceleration_limits.resize(panda.getModel().nq);
-    // for (int i = 0; i < panda.getModel().nq; i++) {
-    //   acceleration_limits[i] = 10.0;
-    // }
-    acceleration_limits =
-        Eigen::Vector<double, 7>{15.0, 7.5, 10.0, 12.5, 15.0, 20.0, 20.0};
+    acceleration_limits = Eigen::Vector<double, 7>{15.0, 7.5, 10.0, 12.5, 15.0, 20.0, 20.0};
 
     auto set_joint_state = [this](const JointState::SharedPtr msg) {
       std::lock_guard<std::mutex> lock(joint_state_mutex);
       current_joint_config = msg;
     };
 
-    robot_joint_states_sub = this->create_subscription<JointState>(
-        panda_interface_names::joint_state_topic_name,
-        panda_interface_names::DEFAULT_TOPIC_QOS(), set_joint_state);
+    robot_joint_states_sub = this->create_subscription<JointState>(panda_interface_names::joint_state_topic_name,panda_interface_names::DEFAULT_TOPIC_QOS(), set_joint_state);
 
-    auto set_joint_measured_torques =
-        [this](const JointTorqueMeasureStamped::SharedPtr msg) {
+    auto set_joint_measured_torques =[this](const JointTorqueMeasureStamped::SharedPtr msg) {
           current_measured_joint_torques = msg;
         };
+    robot_measured_torque_sub = this->create_subscription<JointTorqueMeasureStamped>(panda_interface_names::torque_sensor_topic_name,panda_interface_names::DEFAULT_TOPIC_QOS(),set_joint_measured_torques);
 
-    robot_measured_torque_sub =
-        this->create_subscription<JointTorqueMeasureStamped>(
-            panda_interface_names::torque_sensor_topic_name,
-            panda_interface_names::DEFAULT_TOPIC_QOS(),
-            set_joint_measured_torques);
-
-    auto set_desired_joints_command =
-        [this](const JointsCommand::SharedPtr msg) {
+    auto set_desired_joints_command = [this](const JointsCommand::SharedPtr msg) {
           std::lock_guard<std::mutex> lock(desired_cmd_mutex);
           RCLCPP_DEBUG_STREAM(this->get_logger(), "Received joint command");
 
@@ -273,28 +247,21 @@ public:
     mass_matrix_val_debug = this->create_publisher<std_msgs::msg::Float64>(
         "debug/mass_matrix_norm", panda_interface_names::DEFAULT_TOPIC_QOS());
 
-    auto set_cartesian_cmd =
-        [this](
-            const panda_interfaces::msg::CartesianCommand::ConstSharedPtr msg) {
-          RCLCPP_INFO_ONCE(this->get_logger(), "Entered callback");
-        };
-    cartesian_cmd_sub =
-        this->create_subscription<panda_interfaces::msg::CartesianCommand>(
-            "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS(),
-            set_cartesian_cmd);
+    // auto set_cartesian_cmd = [this](const panda_interfaces::msg::CartesianCommand::ConstSharedPtr msg) {
+    //       RCLCPP_INFO_ONCE(this->get_logger(), "Entered callback");
+    //     };
+    // cartesian_cmd_sub = this->create_subscription<panda_interfaces::msg::CartesianCommand>(
+    //         "/panda/cartesian_cmd", panda_interface_names::DEFAULT_TOPIC_QOS(), set_cartesian_cmd);
 
     // Compliance mode Service
 
     auto compliance_mode_cb =
-        [this](const panda_interfaces::srv::SetComplianceMode_Request::SharedPtr
-                   request,
-               panda_interfaces::srv::SetComplianceMode_Response::SharedPtr
-                   response) {
+        [this](const panda_interfaces::srv::SetComplianceMode_Request::SharedPtr request,
+               panda_interfaces::srv::SetComplianceMode_Response::SharedPtr response) {
           if (request->cmd) {
             compliance_mode.store(true);
             response->result = true;
-            RCLCPP_INFO(this->get_logger(),
-                        "Set controller to compliance mode");
+            RCLCPP_INFO(this->get_logger(),"Set controller to compliance mode");
           } else {
             compliance_mode.store(false);
             response->result = true;
@@ -304,12 +271,9 @@ public:
 
     compliance_mode_server =
         this->create_service<panda_interfaces::srv::SetComplianceMode>(
-            panda_interface_names::set_compliance_mode_service_name,
-            compliance_mode_cb);
+            panda_interface_names::set_compliance_mode_service_name, compliance_mode_cb);
 
-    robot_pose_pub = std::make_shared<
-        realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(
-        this->create_publisher<geometry_msgs::msg::PoseStamped>(
+    robot_pose_pub = std::make_shared<realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>>(this->create_publisher<geometry_msgs::msg::PoseStamped>(
             panda_interface_names::panda_pose_state_topic_name,
             panda_interface_names::DEFAULT_TOPIC_QOS()));
 
@@ -385,9 +349,7 @@ public:
       Eigen::Matrix<double, 7, 7> KD = Eigen::Matrix<double, 7, 7>::Identity();
       KD.diagonal() = KD_;
 
-      robot_control_callback = [this, KP,
-                                KD](const franka::RobotState &state,
-                                    franka::Duration dt) -> franka::Torques {
+      robot_control_callback = [this, KP, KD](const franka::RobotState &state, franka::Duration dt) -> franka::Torques {
         // If the thread flag is changed or a shutdown has been requested,
         // always returns last command
         if (!(start_flag.load() && rclcpp::ok())) {
@@ -396,7 +358,6 @@ public:
         }
 
         // Get q and q_dot
-        //
         Eigen::Vector<double, 7> current_joints_config_vec;
         for (size_t i = 0; i < 7; i++) {
           current_joints_config_vec[i] = state.q[i];
@@ -416,6 +377,7 @@ public:
         // - tua_g = torque required for gravity compensation
         // - tau_f = torque required to compensate motor friction
         //
+
         // B(q)
         std::array<double, 49> mass_matrix_raw =
             this->panda_franka_model.value().mass(state);
@@ -481,8 +443,7 @@ public:
             }
           }
         } catch (std::exception &ex) {
-          RCLCPP_ERROR_STREAM(this->get_logger(),
-                              "Error in safety checks: " << ex.what());
+          RCLCPP_ERROR_STREAM(this->get_logger(),"Error in safety checks: " << ex.what());
           panda_franka->stop();
           start_flag.store(false);
           return franka::MotionFinished(franka::Torques(state.tau_J_d));
@@ -525,8 +486,7 @@ public:
 
     RCLCPP_INFO(get_logger(), "Activating...");
     /////////////////////////////////////////////////////////////////////////////////
-    // WARN: In activate can't receive callback messages. Setting current config
-    // to 0 vector (based on joint limits)
+    // WARN: In activate can't receive callback messages. Setting current config to 0 vector (based on joint limits)
     desired_joints_position.resize(panda.getModel().nq);
     desired_joints_position.setZero();
     desired_joints_velocity.resize(panda.getModel().nq);
@@ -546,8 +506,7 @@ public:
 
     if (use_robot) {
 
-      // Setting initial state to the current one of the robot if using real
-      // robot
+      // Setting initial state to the current one of the robot if using real robot
       franka::RobotState initial_state = panda_franka->readOnce();
       for (size_t i = 0; i < 7; i++) {
         desired_joints_position[i] = initial_state.q[i];
@@ -583,6 +542,7 @@ public:
         try {
           RCLCPP_INFO_STREAM(this->get_logger(),
                              "Starting control thread with real time robot");
+          //print thread
           std::thread{[this]() {
             JointsEffort cmd;
             JointsPos pos;
@@ -673,8 +633,7 @@ public:
         }
       }};
 
-      RCLCPP_INFO(this->get_logger(),
-                  "Started control thread with real time robot");
+      RCLCPP_INFO(this->get_logger(),"Started control thread with real time robot");
       return CallbackReturn::SUCCESS;
     } else {
       // Start control loop thread
@@ -725,8 +684,8 @@ private:
   // Subscribers
   rclcpp::Subscription<JointState>::SharedPtr robot_joint_states_sub{};
   rclcpp::Subscription<JointsCommand>::SharedPtr desired_joint_command_sub{};
-  rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr
-      cartesian_cmd_sub{};
+  // rclcpp::Subscription<panda_interfaces::msg::CartesianCommand>::SharedPtr
+  //     cartesian_cmd_sub{};
   rclcpp::Subscription<JointTorqueMeasureStamped>::SharedPtr
       robot_measured_torque_sub{};
 
@@ -746,14 +705,11 @@ private:
   Publisher<std_msgs::msg::Float64>::SharedPtr mass_matrix_val_debug{};
 
   // Robot pose publisher
-  realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
-      robot_pose_pub{};
-  realtime_tools::RealtimePublisher<sensor_msgs::msg::JointState>::SharedPtr
-      joint_states_pub{};
+  realtime_tools::RealtimePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr  robot_pose_pub{};
+  realtime_tools::RealtimePublisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_pub{};
 
   // Services
-  rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr
-      compliance_mode_server;
+  rclcpp::Service<panda_interfaces::srv::SetComplianceMode>::SharedPtr compliance_mode_server;
 
   // Robot related variables
   panda::RobotModel panda;
@@ -766,8 +722,7 @@ private:
   JointState joint_state_to_pub{};
   JointTorqueMeasureStamped::SharedPtr current_measured_joint_torques{nullptr};
   debug_data print_debug;
-  std::function<franka::Torques(const franka::RobotState &, franka::Duration)>
-      robot_control_callback;
+  std::function<franka::Torques(const franka::RobotState &, franka::Duration)>  robot_control_callback;
 
   std::mutex desired_cmd_mutex;
   Eigen::VectorXd desired_joints_position;
@@ -781,7 +736,7 @@ private:
   Eigen::Vector<double, 7> velocity_limits{};
   Eigen::Vector<double, 7> acceleration_limits{};
 
-  const std::string frame_id_name{"fr3_link7"};
+  const std::string frame_id_name{"panda_link7"};
 
   pinocchio::SE3 T_0_b{};
 
@@ -860,30 +815,6 @@ private:
 
     clamp_vec(desired_joints_accelerations, -acceleration_limits,
               acceleration_limits);
-    // RCLCPP_INFO_STREAM(
-    //     this->get_logger(),
-    //     "Desired configuration after clamping: ["
-    //         << desired_joints_position[0] << ", " <<
-    //         desired_joints_position[1]
-    //         << ", " << desired_joints_position[2] << ", "
-    //         << desired_joints_position[3] << ", " <<
-    //         desired_joints_position[4]
-    //         << ", " << desired_joints_position[5] << ", "
-    //         << desired_joints_position[6] << "]\n"
-    //         << "[" << desired_joints_velocity[0] << ", "
-    //         << desired_joints_velocity[1] << ", " <<
-    //         desired_joints_velocity[2]
-    //         << ", " << desired_joints_velocity[3] << ", "
-    //         << desired_joints_velocity[4] << ", " <<
-    //         desired_joints_velocity[5]
-    //         << ", " << desired_joints_velocity[6] << "]\n"
-    //         << "[" << desired_joints_accelerations[0] << ", "
-    //         << desired_joints_accelerations[1] << ", "
-    //         << desired_joints_accelerations[2] << ", "
-    //         << desired_joints_accelerations[3] << ", "
-    //         << desired_joints_accelerations[4] << ", "
-    //         << desired_joints_accelerations[5] << ", "
-    //         << desired_joints_accelerations[6] << "]\n");
   }
 
   void publish_robot_state_libfranka(const franka::RobotState state) {
@@ -905,7 +836,7 @@ private:
       joint_state_to_pub.effort[i] = state.tau_J[i];
     }
 
-    joint_states_pub->tryPublish(joint_state_to_pub);
+    joint_states_pub->try_publish(joint_state_to_pub);
   }
 };
 
@@ -938,16 +869,6 @@ void InverseDynamicsController::control() {
   // Eigen::Vector<double, 7> KD_{Kd, Kd, Kd, Kd, Kd, Kd, Kd};
   Eigen::Matrix<double, 7, 7> KD = Eigen::Matrix<double, 7, 7>::Identity();
   KD.diagonal() = KD_;
-
-  // RCLCPP_INFO(this->get_logger(), "Waiting for simulation to start");
-  // rclcpp::Time last_control_cycle = this->now();
-  // while (rclcpp::Time{current_joint_config->header.stamp} - this->now() ==
-  //        rclcpp::Duration{0, 0}) {
-  // }
-  // for (size_t i = 0; i < 7; i++) {
-  //   desired_joints_position[i] = current_joint_config->position[i];
-  // }
-
   desired_joints_position.setZero();
   clamp_joint_config();
   RCLCPP_INFO_STREAM(
