@@ -62,13 +62,13 @@ def generate_launch_description():
     use_robot = DeclareLaunchArgument(
         'use_robot',
         default_value='False',
-        description='Use fr3 real robot (set also robot ip)'
+        description='Use fer real robot (set also robot ip)'
     )
 
     robot_ip = DeclareLaunchArgument(
         'robot_ip',
         default_value='192.168.1.0',
-        description='fr3 robot ip'
+        description='fer robot ip'
     )
 
     world_base_link = DeclareLaunchArgument(
@@ -155,18 +155,18 @@ def generate_launch_description():
             'use_sim_time': LaunchConfiguration('use_sim_time'),
         }],
     )
-    presence_state_node = Node(
-        package='panda_utils',
-        executable='human_presence',
-        name='human_presence',
-        prefix = ['taskset -c 3'],
-        parameters=[{
-            'use_sim_time': LaunchConfiguration('use_sim_time'),
-            'wrist_estimation': LaunchConfiguration('wrist_estimation'),
-            'contact_threshold': LaunchConfiguration('contact_threshold'),
-            'no_contact_threshold': LaunchConfiguration('no_contact_threshold'),
-        }],
-    )
+    # presence_state_node = Node(
+    #     package='panda_utils',
+    #     executable='human_presence',
+    #     name='human_presence',
+    #     prefix = ['taskset -c 3'],
+    #     parameters=[{
+    #         'use_sim_time': LaunchConfiguration('use_sim_time'),
+    #         'wrist_estimation': LaunchConfiguration('wrist_estimation'),
+    #         'contact_threshold': LaunchConfiguration('contact_threshold'),
+    #         'no_contact_threshold': LaunchConfiguration('no_contact_threshold'),
+    #     }],
+    # )
     frame_publisher = Node(
         package='panda_utils',
         executable='frame_publisher',
@@ -215,23 +215,15 @@ def generate_launch_description():
             'safe_effort_perc': LaunchConfiguration('safe_effort_perc')
         }],
     )
-    frame_publisher = Node(
-        package='panda_utils',
-        executable='frame_publisher',
-        name='frame_publisher',
-        parameters=[{
-            'use_sim_time': LaunchConfiguration('use_sim_time'),
-        }],
-    )
-    demo = Node(
-        package='panda_utils',
-        executable='demo',
-        name='demo',
-        parameters=[{
-            'use_sim_time': LaunchConfiguration('use_sim_time'),
-            'home_pose': LaunchConfiguration('home_pose'),
-        }],
-    )
+    # demo = Node(
+    #     package='panda_utils',
+    #     executable='demo',
+    #     name='demo',
+    #     parameters=[{
+    #         'use_sim_time': LaunchConfiguration('use_sim_time'),
+    #         'home_pose': LaunchConfiguration('home_pose'),
+    #     }],
+    # )
 
     return LaunchDescription([
         use_sim_time,
@@ -257,9 +249,9 @@ def generate_launch_description():
         stop_traj_server,
         loop_cart_traj_server,
         impedance_controller,
-        presence_state_node,
+        #presence_state_node,
         frame_publisher,
-        demo,
+        #demo,
 
         inverse_dynamics_controller,
         joint_traj_server,

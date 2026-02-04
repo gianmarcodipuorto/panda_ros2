@@ -21,33 +21,21 @@ using namespace pinocchio;
 
 class RobotModel {
 public:
-  RobotModel(const std::string &urdf_param_or_path,
-             bool is_package_path = true);
+  RobotModel(const std::string &urdf_param_or_path, bool is_package_path = true);
 
   Eigen::MatrixXd getMassMatrix(const Eigen::VectorXd &q);
   Eigen::VectorXd getGravityVector(const Eigen::VectorXd &q);
-  Eigen::VectorXd getCoriolisCentrifugal(const Eigen::VectorXd &q,
-                                         const Eigen::VectorXd &v);
-  Eigen::VectorXd getNonLinearEffects(const Eigen::VectorXd &q,
-                                      const Eigen::VectorXd &v);
-  Eigen::VectorXd computeHessianTimesQDot(const Eigen::VectorXd &q,
-                                          const Eigen::VectorXd &q_dot,
-                                          const std::string &frame_id);
-  Eigen::MatrixXd
-  computeAnalyticalJacobian(const Eigen::VectorXd &q,
-                            const pinocchio::FrameIndex &frame_id);
-
+  Eigen::VectorXd getCoriolisCentrifugal(const Eigen::VectorXd &q, const Eigen::VectorXd &v);
+  Eigen::VectorXd getNonLinearEffects(const Eigen::VectorXd &q,const Eigen::VectorXd &v);
+  Eigen::VectorXd computeHessianTimesQDot(const Eigen::VectorXd &q,const Eigen::VectorXd &q_dot,const std::string &frame_id);
+  Eigen::MatrixXd computeAnalyticalJacobian(const Eigen::VectorXd &q, const pinocchio::FrameIndex &frame_id);
   Eigen::MatrixXd getHessian(const std::string &frame_name);
-
   Eigen::MatrixXd getGeometricalJacobian(const std::string &frame_name);
-
-  void computeForwardKinematics(const Eigen::VectorXd &q,
-                                const Eigen::VectorXd &v = Eigen::VectorXd());
+  void computeForwardKinematics(const Eigen::VectorXd &q, const Eigen::VectorXd &v = Eigen::VectorXd());
 
   geometry_msgs::msg::Pose getPose(const std::string &frame_name);
   pinocchio::SE3 getFramePose(const std::string &frame_name);
-  pinocchio::SE3 getFramePoseInBase(const std::string &frame_name,
-                                    const std::string &base_joint_name);
+  pinocchio::SE3 getFramePoseInBase(const std::string &frame_name, const std::string &base_joint_name);
   void computeAll(const Eigen::VectorXd &q, const Eigen::VectorXd &v);
 
   const pinocchio::Model &getModel() const;

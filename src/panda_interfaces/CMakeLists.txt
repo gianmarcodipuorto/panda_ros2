@@ -21,6 +21,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "./msg/JointsCommand.msg"
   "./msg/JointTorqueMeasure.msg"
   "./msg/JointTorqueMeasureStamped.msg"
+  "./msg/JointsCommandedVelocities.msg"
   "./srv/SetComplianceMode.srv"
   "./action/LoopCartTraj.action"
   "./msg/DoubleArrayStamped.msg"

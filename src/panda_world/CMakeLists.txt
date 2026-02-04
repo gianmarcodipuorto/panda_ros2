@@ -27,18 +27,10 @@ target_link_libraries(joint_state_publisher_effort_patcher franka)
 add_executable(torque_sensor_publisher ./src/torque_sensors_publisher.cpp)
 ament_target_dependencies(torque_sensor_publisher rclcpp sensor_msgs panda_interfaces)
 
-add_executable(depth_converter ./src/image_converter.cpp)
-ament_target_dependencies(depth_converter
-  rclcpp
-  sensor_msgs
-  cv_bridge
-  OpenCV
-)
-
 install(TARGETS
   joint_state_publisher_effort_patcher
   torque_sensor_publisher
-  depth_converter
+  # depth_converter
   DESTINATION lib/${PROJECT_NAME}
 )
 

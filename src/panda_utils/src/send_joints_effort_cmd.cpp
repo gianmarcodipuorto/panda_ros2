@@ -32,17 +32,13 @@ public:
       robot_ = franka::Robot(this->get_parameter("robot_ip").as_string());
     }
 
-    for (const auto &name :
-         panda_interface_names::bridge_effort_cmd_topic_names) {
-      auto pub = this->create_publisher<std_msgs::msg::Float64>(
-          name, panda_interface_names::DEFAULT_TOPIC_QOS());
+    for (const auto &name : panda_interface_names::bridge_effort_cmd_topic_names) {
+      auto pub = this->create_publisher<std_msgs::msg::Float64>(name, panda_interface_names::DEFAULT_TOPIC_QOS());
       joints_effort_pubs.push_back(pub);
     }
 
     auto save_joints_effort = [this](panda_interfaces::msg::JointsEffort mess) {
-      for (size_t i = 0;
-           i < std::min(mess.effort_values.size(), joints_effort_pubs.size());
-           ++i) {
+      for (size_t i = 0;i < std::min(mess.effort_values.size(), joints_effort_pubs.size());++i) {
         this->efforts[i] = mess.effort_values[i];
       }
     };
@@ -63,8 +59,7 @@ public:
 
     auto send_joints_effort_robot = [this]() {
       try {
-        robot_.value().control([this](const franka::RobotState &,
-                                      franka::Duration) -> franka::Torques {
+        robot_.value().control([this](const franka::RobotState &,franka::Duration) -> franka::Torques {
           return franka::Torques{efforts};
         });
       } catch (const franka::ControlException &e) {
@@ -83,7 +78,7 @@ public:
             << panda_interface_names::panda_effort_cmd_topic_name);
 
     if (use_robot) {
-      timer = rclcpp::create_timer(this, this->get_clock(), 10us,
+      timer = rclcpp::create_timer(this, this->get_clock(), 10us, //non credo che questo sia corretto
                                    send_joints_effort_robot);
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Created node "

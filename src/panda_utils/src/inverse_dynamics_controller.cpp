@@ -1,13 +1,8 @@
-#include "algorithm/jacobian.hpp"
 #include "franka/control_types.h"
 #include "franka/exception.h"
-#include "franka/rate_limiting.h"
 #include "franka/robot_state.h"
-#include "geometry_msgs/msg/accel.hpp"
-#include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-#include "geometry_msgs/msg/twist.hpp"
 #include "multibody/fwd.hpp"
 //#include "panda_interfaces/msg/cartesian_command.hpp"
 #include "panda_interfaces/msg/joint_torque_measure_stamped.hpp"
@@ -17,18 +12,12 @@
 #include "panda_interfaces/srv/set_compliance_mode.hpp"
 #include "panda_utils/constants.hpp"
 #include "panda_utils/robot_model.hpp"
-#include "realtime_tools/realtime_tools/realtime_helpers.hpp"
-#include "realtime_tools/realtime_tools/realtime_publisher.hpp"
-#include "sensor_msgs/msg/joint_state.hpp"
-#include "spatial/explog-quaternion.hpp"
-#include "spatial/fwd.hpp"
-#include "std_msgs/msg/float64.hpp"
-#include "tf2_eigen/tf2_eigen/tf2_eigen.hpp"
-#include <Eigen/src/Core/DiagonalMatrix.h>
+#include <realtime_tools/realtime_tools/realtime_helpers.hpp>
+#include <realtime_tools/realtime_tools/realtime_publisher.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/float64.hpp>
 #include <Eigen/src/Core/Matrix.h>
-#include <Eigen/src/Core/util/IndexedViewHelper.h>
 #include <Eigen/src/Geometry/Quaternion.h>
-#include <Eigen/src/Geometry/Transform.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <array>
 #include <chrono>
@@ -39,17 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <rcl/time.h>
-#include <rclcpp/clock.hpp>
-#include <rclcpp/duration.hpp>
-#include <rclcpp/logger.hpp>
-#include <rclcpp/logging.hpp>
-#include <rclcpp/rate.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp/service.hpp>
-#include <rclcpp/subscription.hpp>
-#include <rclcpp/subscription_base.hpp>
-#include <rclcpp/time.hpp>
-#include <rclcpp/utilities.hpp>
 #include <rclcpp_lifecycle/rclcpp_lifecycle/lifecycle_node.hpp>
 #include <realtime_tools/realtime_tools/realtime_publisher.hpp>
 #include <thread>
@@ -411,7 +390,7 @@ public:
         Eigen::Vector<double, 7> control_input_vec = mass_matrix * y + coriolis;
 
         // Clamping control input
-        // Torque limits for fr3 indicated by libfranka lib
+        // Torque limits for fer indicated by libfranka lib
         //
         // https://frankaemika.github.io/docs/control_parameters.html#limits-for-franka-research-3
         //
@@ -736,7 +715,7 @@ private:
   Eigen::Vector<double, 7> velocity_limits{};
   Eigen::Vector<double, 7> acceleration_limits{};
 
-  const std::string frame_id_name{"panda_link7"};
+  const std::string frame_id_name{"fer_link7"};
 
   pinocchio::SE3 T_0_b{};
 

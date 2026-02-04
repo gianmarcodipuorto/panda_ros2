@@ -18,21 +18,18 @@
 
 class FramePublisher : public rclcpp::Node {
 public:
-  FramePublisher()
-      : rclcpp::Node("frame_publisher_node"), publishing_enabled_(false) {
+  FramePublisher(): rclcpp::Node("frame_publisher_node"), publishing_enabled_(false) {
     // Declare and get parameters
     this->declare_parameter<double>("publish_rate", 100.0);
-    this->declare_parameter<std::string>("robot_base_frame_id", "fr3_link0");
+    this->declare_parameter<std::string>("robot_base_frame_id", "fer_link0");
 
     double publish_rate = this->get_parameter("publish_rate").as_double();
-    robot_base_frame_id_ =
-        this->get_parameter("robot_base_frame_id").as_string();
+    robot_base_frame_id_ =this->get_parameter("robot_base_frame_id").as_string();
 
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     // Service to enable/disable publishing
-    enable_publishing_service_ = this->create_service<std_srvs::srv::SetBool>(
-        "/set_publishing_pose_frames",
+    enable_publishing_service_ = this->create_service<std_srvs::srv::SetBool>("/set_publishing_pose_frames",
         std::bind(&FramePublisher::enablePublishingServiceCallback, this,
                   std::placeholders::_1, std::placeholders::_2));
 
@@ -43,8 +40,7 @@ public:
         this->create_subscription<geometry_msgs::msg::PoseArray>(
             panda_interface_names::panda_frame_poses_topic_name,
             panda_interface_names::DEFAULT_TOPIC_QOS(),
-            std::bind(&FramePublisher::posesCallback, this,
-                      std::placeholders::_1));
+            std::bind(&FramePublisher::posesCallback, this, std::placeholders::_1));
 
     // Create a timer for publishing frames at the specified rate
     timer_ = this->create_wall_timer(
@@ -61,15 +57,13 @@ public:
 private:
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_publishing_service_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr
-      poses_subscription_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr poses_subscription_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   std::atomic<bool> publishing_enabled_;
   std::string robot_base_frame_id_;
 
-  // Data structures to hold received poses and their names, protected by a
-  // mutex.
+  // Data structures to hold received poses and their names, protected by a mutex.
   std::vector<geometry_msgs::msg::Pose> poses_to_publish_;
   std::vector<std::string> frame_ids_to_publish_;
   std::mutex poses_mutex_;
@@ -96,8 +90,7 @@ private:
     std::lock_guard<std::mutex> lock(poses_mutex_);
     poses_to_publish_ = msg->poses;
     frame_ids_to_publish_ = panda_interface_names::panda_link_names;
-    RCLCPP_DEBUG(this->get_logger(), "Received %zu poses to publish.",
-                 poses_to_publish_.size());
+    RCLCPP_DEBUG(this->get_logger(), "Received %zu poses to publish.",poses_to_publish_.size());
   }
 
   // Timer callback to publish the frames.
@@ -108,8 +101,7 @@ private:
 
     std::lock_guard<std::mutex> lock(poses_mutex_);
     if (poses_to_publish_.empty()) {
-      RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                            "No poses currently available to publish.");
+      RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,"No poses currently available to publish.");
       return;
     }
 
@@ -121,8 +113,7 @@ private:
       geometry_msgs::msg::TransformStamped transform_stamped;
       transform_stamped.header.stamp = now;
       transform_stamped.header.frame_id = prev_frame;
-      transform_stamped.child_frame_id =
-          frame_ids_to_publish_[i + 1]; // First one is fr3_link0
+      transform_stamped.child_frame_id = frame_ids_to_publish_[i + 1]; // First one is panda_link0
 
       tf2::Transform current_abs_tf;
       tf2::fromMsg(poses_to_publish_[i], current_abs_tf);

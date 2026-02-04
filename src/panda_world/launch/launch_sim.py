@@ -34,26 +34,18 @@ def generate_launch_description():
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_panda_world = get_package_share_directory('panda_world')
 
-    robot_urdf = os.path.join(get_package_share_directory('panda_world'),
-                              'models', 'panda', 'panda_fr3_rviz.urdf')
-    camera_urdf = os.path.join(get_package_share_directory('panda_world'),
-                               'models', 'camera.urdf')
-    default_rviz_config = os.path.join(
-        get_package_share_directory('panda_world'), 'config', 'config2.rviz')
+    robot_urdf = os.path.join(get_package_share_directory('panda_world'),'models', 'panda', 'panda_fer.urdf')
+    default_rviz_config = os.path.join(get_package_share_directory('panda_world'), 'config', 'config2.rviz')
 
     with open(robot_urdf, 'r') as file:
         robot_description = file.read()
-
-    with open(camera_urdf, 'r') as file:
-        camera_description = file.read()
 
     DeclareLaunchArgument(
         'use_sim_time',
         default_value='true',
         description='Use simulation (Gazebo) clock if true')
 
-    rviz_launch_arg = DeclareLaunchArgument('rviz', default_value='false',
-                                            description='Open RViz.')
+    rviz_launch_arg = DeclareLaunchArgument('rviz', default_value='false',description='Open RViz.')
     rviz = Node(
         package='rviz2',
         executable='rviz2',
@@ -71,19 +63,11 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time, 'robot_description': robot_description}],
         arguments=[robot_urdf])
 
-    camera_state = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        name='robot_state_publisher',
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time, 'robot_description': camera_description}],
-        arguments=[camera_urdf])
-
-    panda_fr3_model = PathJoinSubstitution([
+    panda_fer_model = PathJoinSubstitution([
         pkg_panda_world,
         'models',
         'panda',
-        'panda_fr3.urdf'
+        'panda_fer.urdf'
     ])
 
     # Setup to launch the simulator and Gazebo world
@@ -117,15 +101,6 @@ def generate_launch_description():
         output='screen'
     )
 
-    depth_img_converter = Node(
-        package='panda_world',
-        executable='depth_converter',
-        parameters=[{
-            'use_sim_time': use_sim_time
-        }],
-        output='screen'
-    )
-
     world = LaunchConfiguration('world')
     file = LaunchConfiguration('file')
     model_string = LaunchConfiguration('model_string')
@@ -143,7 +118,7 @@ def generate_launch_description():
         'world', default_value=TextSubstitution(text='panda_world'),
         description='World name')
     declare_file_cmd = DeclareLaunchArgument(
-        'file', default_value=panda_fr3_model,
+        'file', default_value=panda_fer_model,
         description='SDF/URDF filename of model')
     declare_model_string_cmd = DeclareLaunchArgument(
         'model_string',
@@ -161,29 +136,6 @@ def generate_launch_description():
     declare_allow_renaming_cmd = DeclareLaunchArgument(
         'allow_renaming', default_value='False',
         description='Whether the entity allows renaming or not'
-    )
-
-    load_camera = Node(
-        package='ros_gz_sim',
-        executable='create',
-        output='screen',
-        parameters=[{'world': world,
-                     'file': PathJoinSubstitution([
-                         pkg_panda_world,
-                         'models',
-                         'camera.urdf'
-                     ]),
-                     'string': model_string,
-                     'topic': topic,
-                     'name': "camera",
-                     'allow_renaming': allow_renaming,
-                     'x': x,
-                     'y': y,
-                     'z': z,
-                     'R': roll,
-                     'P': pitch,
-                     'Y': yaw,
-                     }],
     )
 
     load_nodes = Node(
@@ -214,17 +166,6 @@ def generate_launch_description():
         output='screen'
     )
 
-    camera_transform = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_world_rgb',
-        arguments=[
-            '0.0', '0.0', '0.0',
-            '-1.57', '0.0', '-1.57',
-            'kinect_rgb', 'camera/kinect_rgb/rgbd_camera'  # parent_frame child_frame
-        ]
-    )
-
     # Create the launch description and populate
     ld = LaunchDescription()
 
@@ -238,15 +179,15 @@ def generate_launch_description():
     # Add the actions to launch all of the create nodes
     ld.add_action(gz_sim)
     ld.add_action(load_nodes)
-    ld.add_action(load_camera)
+    # ld.add_action(load_camera)
     ld.add_action(robot_state)
-    ld.add_action(camera_state)
+    # ld.add_action(camera_state)
     ld.add_action(bridge)
     ld.add_action(joint_state_publisher_patched)
     ld.add_action(torque_publisher)
     ld.add_action(rviz_launch_arg)
-    ld.add_action(depth_img_converter)
-    ld.add_action(camera_transform)
+    # ld.add_action(depth_img_converter)
+    # ld.add_action(camera_transform)
     ld.add_action(rviz)
 
     return ld

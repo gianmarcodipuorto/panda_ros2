@@ -34,8 +34,7 @@ public:
     gz_wrench_stamped_sub.resize(sensor_topic_names.size());
 
     for (size_t i = 0; i < sensor_topic_names.size(); i++) {
-      auto wrench_sub_cb = [this,
-                            i](const geometry_msgs::msg::WrenchStamped msg) {
+      auto wrench_sub_cb = [this,i](const geometry_msgs::msg::WrenchStamped msg) {
         this->wrenches[i] = msg;
       };
 

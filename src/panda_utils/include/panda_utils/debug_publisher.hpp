@@ -69,8 +69,7 @@ struct debug_data {
 
   // control law corrective cartesian component, before inverse jacobian
   // multiplication
-  std::optional<Eigen::Vector<double, 6>> y_cartesian =
-      Eigen::Vector<double, 6>{};
+  std::optional<Eigen::Vector<double, 6>> y_cartesian = Eigen::Vector<double, 6>{};
 
   // Desired pose
   std::optional<Pose> des_pose;
@@ -85,12 +84,10 @@ struct debug_data {
   std::optional<Accel> des_accel;
 
   // Current twist
-  std::optional<Eigen::Vector<double, 6>> current_twist =
-      Eigen::Vector<double, 6>{};
+  std::optional<Eigen::Vector<double, 6>> current_twist = Eigen::Vector<double, 6>{};
 
   // Current Jdot * qdot
-  std::optional<Eigen::Vector<double, 6>> current_j_dot_q_dot =
-      Eigen::Vector<double, 6>{};
+  std::optional<Eigen::Vector<double, 6>> current_j_dot_q_dot = Eigen::Vector<double, 6>{};
 
   // Pose error (Quaternion as w, x, y, z)
   Eigen::Vector<double, 7> error_pose_vec;
@@ -111,8 +108,7 @@ struct debug_data {
   std::optional<Eigen::Vector<double, 7>> tau_ext_calculated = Eigen::Vector<double, 7>{};
 
   // Filtered joint velocities
-  std::optional<Eigen::Vector<double, 7>> filtered_joints_vec =
-      Eigen::Vector<double, 7>{};
+  std::optional<Eigen::Vector<double, 7>> filtered_joints_vec = Eigen::Vector<double, 7>{};
 };
 
 class DebugPublisher {
@@ -120,8 +116,7 @@ class DebugPublisher {
 public:
   debug_data &data() { return pub_data; }
   void publish(rclcpp::Time now);
-  void create_pubs(rclcpp_lifecycle::LifecycleNode::SharedPtr node,
-                   rclcpp::QoS qos);
+  void create_pubs(rclcpp_lifecycle::LifecycleNode::SharedPtr node,rclcpp::QoS qos);
   DebugPublisher();
 
 private:
@@ -138,29 +133,20 @@ private:
   AccelStamped accel;
 
   // Publishers
-  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr
-      min_singular_val_pub{};
+  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr min_singular_val_pub{};
   Publisher<PoseStamped>::SharedPtr pose_error_debug{};
   Publisher<JointsEffort>::SharedPtr robot_joint_efforts_pub_debug{};
   Publisher<JointsEffort>::SharedPtr calculated_joints_effort_pub_debug{};
   Publisher<JointsEffort>::SharedPtr gravity_contribute_debug{};
   Publisher<JointsEffort>::SharedPtr y_contribute_debug{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      y_cartesian_contribute_debug{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      tau_read_debug{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      tau_external_contribute_debug{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      tau_external_calculated_debug{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      filtered_joints_vec_pub{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      coriolis_debug{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      external_forces_contribute_debug{};
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      external_forces_calculated_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr y_cartesian_contribute_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr tau_read_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr tau_external_contribute_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr tau_external_calculated_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr filtered_joints_vec_pub{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr coriolis_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr external_forces_contribute_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr external_forces_calculated_debug{};
   Publisher<TwistStamped>::SharedPtr velocity_error_debug{};
   Publisher<PoseStamped>::SharedPtr desired_pose_debug{};
   Publisher<TwistStamped>::SharedPtr desired_velocity_debug{};
@@ -170,16 +156,10 @@ private:
   Publisher<TwistStamped>::SharedPtr current_jdot_qdot_debug{};
   Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr lamda_dls_debug{};
   Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr theta_error_debug{};
-
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      manipulability_index_grad_debug{};
-  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr
-      manipulability_index_debug{};
-
-  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr
-      joint_limits_index_grad_debug{};
-  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr
-      joint_limits_index_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr manipulability_index_grad_debug{};
+  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr manipulability_index_debug{};
+  Publisher<panda_interfaces::msg::DoubleArrayStamped>::SharedPtr joint_limits_index_grad_debug{};
+  Publisher<panda_interfaces::msg::DoubleStamped>::SharedPtr joint_limits_index_debug{};
 
   void assign_time(rclcpp::Time now);
 };

@@ -66,65 +66,65 @@ Visualization Manager:
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
-        fr3_hand:
+        fer_hand:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_hand_tcp:
+        fer_hand_tcp:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        fr3_leftfinger:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        fr3_link0:
+        fer_leftfinger:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_link1:
+        fer_link0:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_link2:
+        fer_link1:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_link3:
+        fer_link2:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_link4:
+        fer_link3:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_link5:
+        fer_link4:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_link6:
+        fer_link5:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_link7:
+        fer_link6:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        fr3_link8:
+        fer_link7:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        fr3_rightfinger:
+          Value: true
+        fer_link8:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        fer_rightfinger:
           Alpha: 1
           Show Axes: false
           Show Trail: false

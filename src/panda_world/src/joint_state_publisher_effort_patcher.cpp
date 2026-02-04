@@ -17,8 +17,7 @@ double std_dev = sqrt(variance);
 
 class GaussianNoiseGenerator {
 public:
-  GaussianNoiseGenerator(double mean, double stddev)
-      : generator(std::random_device{}()), distribution(mean, stddev) {}
+  GaussianNoiseGenerator(double mean, double stddev): generator(std::random_device{}()), distribution(mean, stddev) {}
 
   double generate() { return distribution(generator); }
   double operator()() { return generate(); }
@@ -49,11 +48,9 @@ public:
             std::bind(&JointStateEffortPatcher::effort_cmd_callback, this,
                       std::placeholders::_1));
 
-    joint_states_pub_ = this->create_publisher<sensor_msgs::msg::JointState>(
-        "/joint_states", 10);
+    joint_states_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);
 
-    joint_states_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-        "/joint_states_no_effort", 10,
+    joint_states_sub_ = this->create_subscription<sensor_msgs::msg::JointState>("/joint_states_no_effort", 10,
         std::bind(&JointStateEffortPatcher::joint_states_callback, this,
                   std::placeholders::_1));
 
@@ -65,13 +62,10 @@ public:
       try {
         franka::RobotState state = robot_.value().readOnce();
         auto msg = sensor_msgs::msg::JointState{};
-        msg.position =
-            std::vector<double>(std::begin(state.q), std::end(state.q));
-        msg.velocity =
-            std::vector<double>(std::begin(state.dq), std::end(state.dq));
+        msg.position = std::vector<double>(std::begin(state.q), std::end(state.q));
+        msg.velocity = std::vector<double>(std::begin(state.dq), std::end(state.dq));
 
-        msg.effort =
-            std::vector<double>(std::begin(state.tau_J), std::end(state.tau_J));
+        msg.effort = std::vector<double>(std::begin(state.tau_J), std::end(state.tau_J));
         joint_states_pub_->publish(msg);
       } catch (const std::exception &e) {
         RCLCPP_WARN(this->get_logger(), "Error reading state: %s", e.what());
@@ -79,8 +73,7 @@ public:
     };
 
     if (use_robot) {
-      timer = rclcpp::create_timer(this, this->get_clock(), 10us,
-                                   publish_joint_states_robot);
+      timer = rclcpp::create_timer(this, this->get_clock(), 10us, publish_joint_states_robot);
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Created node "
                              << this->get_name() << " with clock "
@@ -89,8 +82,7 @@ public:
                                      : "system clock")
                              << " using real panda robot");
     } else {
-      timer = rclcpp::create_timer(this, this->get_clock(), 10us,
-                                   publish_joint_states);
+      timer = rclcpp::create_timer(this, this->get_clock(), 10us, publish_joint_states);
       RCLCPP_INFO_STREAM(this->get_logger(),
                          "Created node "
                              << this->get_name() << " with clock "

@@ -13,76 +13,45 @@
   gz_type_name: "gz.msgs.Model"
   direction: GZ_TO_ROS
 
-# Topic for rgbd camera (kinect)
-- ros_topic_name: "/depth/image_raw"
-  gz_topic_name: "/rgbd_camera/depth_image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
-
-- ros_topic_name: "/rgbd_camera/points"
-  gz_topic_name: "/rgbd_camera/points"
-  ros_type_name: "sensor_msgs/msg/PointCloud2"
-  gz_type_name: "gz.msgs.PointCloudPacked"
-  direction: GZ_TO_ROS
-
-- ros_topic_name: "/image_raw"
-  gz_topic_name: "/rgbd_camera/image"
-  ros_type_name: "sensor_msgs/msg/Image"
-  gz_type_name: "gz.msgs.Image"
-  direction: GZ_TO_ROS
-
-- ros_topic_name: "/camera_info"
-  gz_topic_name: "/rgbd_camera/camera_info"
-  ros_type_name: "sensor_msgs/msg/CameraInfo"
-  gz_type_name: "gz.msgs.CameraInfo"
-  direction: GZ_TO_ROS
-
-- ros_topic_name: "/depth/camera_info"
-  gz_topic_name: "/rgbd_camera/camera_info"
-  ros_type_name: "sensor_msgs/msg/CameraInfo"
-  gz_type_name: "gz.msgs.CameraInfo"
-  direction: GZ_TO_ROS
-
 # Force-torque sensors 
 - ros_topic_name: "/joint1/force_torque_sensor"
-  gz_topic_name: "fr3_joint1/force_torque_sensor"
+  gz_topic_name: "fer_joint1/force_torque_sensor"
   ros_type_name: "geometry_msgs/msg/WrenchStamped"
   gz_type_name: "gz.msgs.Wrench"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/joint2/force_torque_sensor"
-  gz_topic_name: "fr3_joint2/force_torque_sensor"
+  gz_topic_name: "fer_joint2/force_torque_sensor"
   ros_type_name: "geometry_msgs/msg/WrenchStamped"
   gz_type_name: "gz.msgs.Wrench"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/joint3/force_torque_sensor"
-  gz_topic_name: "fr3_joint3/force_torque_sensor"
+  gz_topic_name: "fer_joint3/force_torque_sensor"
   ros_type_name: "geometry_msgs/msg/WrenchStamped"
   gz_type_name: "gz.msgs.Wrench"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/joint4/force_torque_sensor"
-  gz_topic_name: "fr3_joint4/force_torque_sensor"
+  gz_topic_name: "fer_joint4/force_torque_sensor"
   ros_type_name: "geometry_msgs/msg/WrenchStamped"
   gz_type_name: "gz.msgs.Wrench"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/joint5/force_torque_sensor"
-  gz_topic_name: "fr3_joint5/force_torque_sensor"
+  gz_topic_name: "fer_joint5/force_torque_sensor"
   ros_type_name: "geometry_msgs/msg/WrenchStamped"
   gz_type_name: "gz.msgs.Wrench"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/joint6/force_torque_sensor"
-  gz_topic_name: "fr3_joint6/force_torque_sensor"
+  gz_topic_name: "fer_joint6/force_torque_sensor"
   ros_type_name: "geometry_msgs/msg/WrenchStamped"
   gz_type_name: "gz.msgs.Wrench"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/joint7/force_torque_sensor"
-  gz_topic_name: "fr3_joint7/force_torque_sensor"
+  gz_topic_name: "fer_joint7/force_torque_sensor"
   ros_type_name: "geometry_msgs/msg/WrenchStamped"
   gz_type_name: "gz.msgs.Wrench"
   direction: GZ_TO_ROS
@@ -90,86 +59,86 @@
 
 # Topic accpeting joint cmd in position
 - ros_topic_name: "/joint1/cmd_pos"
-  gz_topic_name: "/model/panda/joint/fr3_joint1/0/cmd_pos"
+  gz_topic_name: "/model/panda/joint/fer_joint1/0/cmd_pos"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint2/cmd_pos"
-  gz_topic_name: "/model/panda/joint/fr3_joint2/0/cmd_pos"
+  gz_topic_name: "/model/panda/joint/fer_joint2/0/cmd_pos"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint3/cmd_pos"
-  gz_topic_name: "/model/panda/joint/fr3_joint3/0/cmd_pos"
+  gz_topic_name: "/model/panda/joint/fer_joint3/0/cmd_pos"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint4/cmd_pos"
-  gz_topic_name: "/model/panda/joint/fr3_joint4/0/cmd_pos"
+  gz_topic_name: "/model/panda/joint/fer_joint4/0/cmd_pos"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint5/cmd_pos"
-  gz_topic_name: "/model/panda/joint/fr3_joint5/0/cmd_pos"
+  gz_topic_name: "/model/panda/joint/fer_joint5/0/cmd_pos"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint6/cmd_pos"
-  gz_topic_name: "/model/panda/joint/fr3_joint6/0/cmd_pos"
+  gz_topic_name: "/model/panda/joint/fer_joint6/0/cmd_pos"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint7/cmd_pos"
-  gz_topic_name: "/model/panda/joint/fr3_joint7/0/cmd_pos"
+  gz_topic_name: "/model/panda/joint/fer_joint7/0/cmd_pos"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 # Topic accpeting joint cmd in force
 - ros_topic_name: "/joint1/cmd_force"
-  gz_topic_name: "/model/panda/joint/fr3_joint1/cmd_force"
+  gz_topic_name: "/model/panda/joint/fer_joint1/cmd_force"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint2/cmd_force"
-  gz_topic_name: "/model/panda/joint/fr3_joint2/cmd_force"
+  gz_topic_name: "/model/panda/joint/fer_joint2/cmd_force"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint3/cmd_force"
-  gz_topic_name: "/model/panda/joint/fr3_joint3/cmd_force"
+  gz_topic_name: "/model/panda/joint/fer_joint3/cmd_force"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint4/cmd_force"
-  gz_topic_name: "/model/panda/joint/fr3_joint4/cmd_force"
+  gz_topic_name: "/model/panda/joint/fer_joint4/cmd_force"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint5/cmd_force"
-  gz_topic_name: "/model/panda/joint/fr3_joint5/cmd_force"
+  gz_topic_name: "/model/panda/joint/fer_joint5/cmd_force"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint6/cmd_force"
-  gz_topic_name: "/model/panda/joint/fr3_joint6/cmd_force"
+  gz_topic_name: "/model/panda/joint/fer_joint6/cmd_force"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
 
 - ros_topic_name: "/joint7/cmd_force"
-  gz_topic_name: "/model/panda/joint/fr3_joint7/cmd_force"
+  gz_topic_name: "/model/panda/joint/fer_joint7/cmd_force"
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ

@@ -1,7 +1,10 @@
-#include "franka/control_types.h"
-#include "franka/exception.h"
-#include "franka/lowpass_filter.h"
-#include "franka/robot_state.h"
+#include <franka/control_types.h>
+#include <franka/exception.h>
+#include <franka/lowpass_filter.h>
+#include <franka/robot_state.h>
+#include <franka/lowpass_filter.h>
+#include <franka/model.h>
+#include <franka/robot.h>
 #include "geometry_msgs/msg/accel.hpp"
 #include "geometry_msgs/msg/accel_stamped.hpp"
 #include "geometry_msgs/msg/pose.hpp"
@@ -20,7 +23,6 @@
 #include "panda_interfaces/msg/joints_effort.hpp"
 #include "panda_interfaces/msg/joints_pos.hpp"
 #include "panda_interfaces/srv/set_compliance_mode.hpp"
-//#include "panda_interfaces/srv/wrist_contact.hpp"
 #include "panda_utils/constants.hpp"
 #include "panda_utils/debug_publisher.hpp"
 #include "panda_utils/robot_model.hpp"
@@ -32,13 +34,8 @@
 #include "std_srvs/srv/set_bool.hpp"
 #include "tf2_eigen/tf2_eigen/tf2_eigen.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include <Eigen/src/Core/DiagonalMatrix.h>
-#include <Eigen/src/Core/Matrix.h>
-#include <Eigen/src/Core/util/Constants.h>
-#include <Eigen/src/Core/util/IndexedViewHelper.h>
-#include <Eigen/src/Geometry/AngleAxis.h>
-#include <Eigen/src/Geometry/Quaternion.h>
-#include <Eigen/src/Geometry/Transform.h>
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <array>
 #include <chrono>
@@ -46,31 +43,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
-#include <franka/lowpass_filter.h>
-#include <franka/model.h>
-#include <franka/robot.h>
-#include <geometry_msgs/msg/accel_stamped.hpp>
-#include <geometry_msgs/msg/pose_array.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <rcl/time.h>
-#include <rclcpp/clock.hpp>
-#include <rclcpp/logger.hpp>
-#include <rclcpp/logging.hpp>
-#include <rclcpp/rate.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp/service.hpp>
-#include <rclcpp/subscription.hpp>
-#include <rclcpp/subscription_base.hpp>
-#include <rclcpp/time.hpp>
-#include <rclcpp/utilities.hpp>
-#include <rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp>
-#include <rclcpp_lifecycle/rclcpp_lifecycle/lifecycle_node.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <realtime_tools/realtime_thread_safe_box.hpp>
-#include <std_srvs/srv/set_bool.hpp>
 #include <string>
 #include <tf2/LinearMath/Transform.hpp>
 #include <tf2/exceptions.hpp>
@@ -97,7 +76,7 @@ using namespace std::chrono_literals;
 
 auto DEFAULT_URDF_PATH =
     ament_index_cpp::get_package_share_directory("panda_world") +
-    panda_constants::panda_model_effort_no_table; //Qui ha definito un path dinamico a runtime, innanzitutto si prende il percorso di panda_world e poi aggiunge il path del file urdf che è definito come costante in constants.hpp
+    panda_constants::panda_model_effort; //Qui ha definito un path dinamico a runtime, innanzitutto si prende il percorso di panda_world e poi aggiunge il path del file urdf che è definito come costante in constants.hpp
 
 //Si va a creare una enumerazione fortemente tipizzata con due stati mutuamente esclusivi così si può usare senza un booleano che può essere confuso 
 enum class Mode {
@@ -279,23 +258,23 @@ public:
     bool use_franka_sim = this->get_parameter("use_franka_sim").as_bool();
     this->get_parameter<std::vector<double>>("world_base_link",world_base_link);
 
-    franka_frame_enum_to_link_name[franka::Frame::kJoint1] = "panda_link1";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint2] = "panda_link2";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint3] = "panda_link3";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint4] = "panda_link4";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint5] = "panda_link5";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint6] = "panda_link6";
-    franka_frame_enum_to_link_name[franka::Frame::kJoint7] = "panda_link7";
-    franka_frame_enum_to_link_name[franka::Frame::kFlange] = "panda_hand"; // Typically end-effector name
+    franka_frame_enum_to_link_name[franka::Frame::kJoint1] = "fer_link1";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint2] = "fer_link2";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint3] = "fer_link3";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint4] = "fer_link4";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint5] = "fer_link5";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint6] = "fer_link6";
+    franka_frame_enum_to_link_name[franka::Frame::kJoint7] = "fer_link7";
+    franka_frame_enum_to_link_name[franka::Frame::kFlange] = "fer_link8"; // Typically end-effector name
 
-    robot_link_name_to_franka_frame["panda_link1"] = franka::Frame::kJoint1;
-    robot_link_name_to_franka_frame["panda_link2"] = franka::Frame::kJoint2;
-    robot_link_name_to_franka_frame["panda_link3"] = franka::Frame::kJoint3;
-    robot_link_name_to_franka_frame["panda_link4"] = franka::Frame::kJoint4;
-    robot_link_name_to_franka_frame["panda_link5"] = franka::Frame::kJoint5;
-    robot_link_name_to_franka_frame["panda_link6"] = franka::Frame::kJoint6;
-    robot_link_name_to_franka_frame["panda_link7"] = franka::Frame::kJoint7;
-    robot_link_name_to_franka_frame["panda_hand"] = franka::Frame::kFlange;
+    robot_link_name_to_franka_frame["fer_link1"] = franka::Frame::kJoint1;
+    robot_link_name_to_franka_frame["fer_link2"] = franka::Frame::kJoint2;
+    robot_link_name_to_franka_frame["fer_link3"] = franka::Frame::kJoint3;
+    robot_link_name_to_franka_frame["fer_link4"] = franka::Frame::kJoint4;
+    robot_link_name_to_franka_frame["fer_link5"] = franka::Frame::kJoint5;
+    robot_link_name_to_franka_frame["fer_link6"] = franka::Frame::kJoint6;
+    robot_link_name_to_franka_frame["fer_link7"] = franka::Frame::kJoint7;
+    robot_link_name_to_franka_frame["fer_link8"] = franka::Frame::kFlange;
 
     // questa è la modalità di funzionamento del controller, se con robot reale o in simulazione
     if (use_robot) {
@@ -1216,7 +1195,7 @@ public:
     geometry_msgs::msg::TransformStamped world_to_base_transform_static;
     world_to_base_transform_static.header.stamp = this->now();
     world_to_base_transform_static.header.frame_id = "world";
-    world_to_base_transform_static.child_frame_id = "panda_link0";
+    world_to_base_transform_static.child_frame_id = "fer_link0";
 
     // Assuming world_base_link parameter order is x, y, z, w, x, y, z for
     // quaternion
@@ -1231,7 +1210,7 @@ public:
 
     static_tf_broadcaster->sendTransform(world_to_base_transform_static);
     RCLCPP_INFO(this->get_logger(),
-                "Published static world -> panda_link0 transform.");
+                "Published static world -> fer_link0 transform.");
   }
 
   /**
@@ -1384,8 +1363,8 @@ private:
   Eigen::VectorXd velocity_limits{};
   Eigen::VectorXd acceleration_limits{};
 
-  const std::string frame_id_name{"panda_hand"};
-  const std::string robot_base_frame_name{"panda_link0"};
+  const std::string frame_id_name{"fer_link8"};
+  const std::string robot_base_frame_name{"fer_link0"};
 
   // Map Franka frames to child frame names for TF publishing (sono delle mappe)
   std::map<franka::Frame, std::string> franka_frame_enum_to_link_name;

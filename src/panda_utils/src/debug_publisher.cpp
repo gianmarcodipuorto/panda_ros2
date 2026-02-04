@@ -9,104 +9,61 @@ DebugPublisher::DebugPublisher() {
   arr_stamped.data.resize(7);
 }
 
-void DebugPublisher::create_pubs(
-    rclcpp_lifecycle::LifecycleNode::SharedPtr node, rclcpp::QoS qos) {
+void DebugPublisher::create_pubs(rclcpp_lifecycle::LifecycleNode::SharedPtr node, rclcpp::QoS qos) {
 
-  robot_joint_efforts_pub_debug = node->create_publisher<JointsEffort>(
-      "debug/cmd/effort_read_no_gravity", qos);
+  robot_joint_efforts_pub_debug = node->create_publisher<JointsEffort>( "debug/cmd/effort_read_no_gravity", qos);
 
-  calculated_joints_effort_pub_debug =
-      node->create_publisher<JointsEffort>("debug/cmd/effort_calculated", qos);
+  calculated_joints_effort_pub_debug = node->create_publisher<JointsEffort>("debug/cmd/effort_calculated", qos);
 
-  gravity_contribute_debug =
-      node->create_publisher<JointsEffort>("debug/cmd/gravity", qos);
+  gravity_contribute_debug = node->create_publisher<JointsEffort>("debug/cmd/gravity", qos);
 
-  pose_error_debug = node->create_publisher<geometry_msgs::msg::PoseStamped>(
-      "debug/error/pose", qos);
+  pose_error_debug = node->create_publisher<geometry_msgs::msg::PoseStamped>("debug/error/pose", qos);
 
-  velocity_error_debug =
-      node->create_publisher<TwistStamped>("debug/error/velocity", qos);
+  velocity_error_debug = node->create_publisher<TwistStamped>("debug/error/velocity", qos);
 
-  desired_pose_debug =
-      node->create_publisher<PoseStamped>("debug/desired_pose", qos);
+  desired_pose_debug = node->create_publisher<PoseStamped>("debug/desired_pose", qos);
 
-  desired_velocity_debug =
-      node->create_publisher<TwistStamped>("debug/desired_velocity", qos);
+  desired_velocity_debug = node->create_publisher<TwistStamped>("debug/desired_velocity", qos);
 
-  desired_acceleration_debug =
-      node->create_publisher<AccelStamped>("debug/desired_acceleration", qos);
+  desired_acceleration_debug = node->create_publisher<AccelStamped>("debug/desired_acceleration", qos);
 
-  current_pose_debug = node->create_publisher<PoseStamped>(
-      panda_interface_names::panda_pose_state_topic_name, qos);
+  current_pose_debug = node->create_publisher<PoseStamped>(panda_interface_names::panda_pose_state_topic_name, qos);
 
-  current_velocity_debug =
-      node->create_publisher<TwistStamped>("debug/current_velocity", qos);
+  current_velocity_debug = node->create_publisher<TwistStamped>("debug/current_velocity", qos);
 
-  current_jdot_qdot_debug =
-      node->create_publisher<TwistStamped>("debug/current_jdot_qdot", qos);
+  current_jdot_qdot_debug = node->create_publisher<TwistStamped>("debug/current_jdot_qdot", qos);
 
-  y_contribute_debug =
-      node->create_publisher<JointsEffort>("debug/cmd/y_contribute", qos);
+  y_contribute_debug = node->create_publisher<JointsEffort>("debug/cmd/y_contribute", qos);
 
-  y_cartesian_contribute_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/cmd/y_cartesian_contribute", qos);
+  y_cartesian_contribute_debug = node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/cmd/y_cartesian_contribute", qos);
 
-  tau_external_contribute_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/cmd/tau_ext_contribute", qos);
+  tau_external_contribute_debug = node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/cmd/tau_ext_contribute", qos);
 
-  tau_external_calculated_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/cmd/tau_ext_calculated", qos);
+  tau_external_calculated_debug = node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/cmd/tau_ext_calculated", qos);
 
-  tau_read_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/cmd/tau_read", qos);
+  tau_read_debug = node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/cmd/tau_read", qos);
 
-  filtered_joints_vec_pub =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/filtered_joints_vec", qos);
+  filtered_joints_vec_pub = node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/filtered_joints_vec", qos);
 
-  coriolis_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/coriolis", qos);
+  coriolis_debug =node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/coriolis", qos);
 
-  external_forces_contribute_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/cmd/external_forces_contribute", qos);
+  external_forces_contribute_debug =node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/cmd/external_forces_contribute", qos);
 
-  external_forces_calculated_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/cmd/external_forces_calculated", qos);
+  external_forces_calculated_debug = node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/cmd/external_forces_calculated", qos);
 
-  lamda_dls_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleStamped>(
-          "debug/lambda", qos);
+  lamda_dls_debug = node->create_publisher<panda_interfaces::msg::DoubleStamped>("debug/lambda", qos);
 
-  theta_error_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleStamped>(
-          "debug/theta_error_orientation", qos);
+  theta_error_debug =node->create_publisher<panda_interfaces::msg::DoubleStamped>("debug/theta_error_orientation", qos);
 
-  manipulability_index_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleStamped>(
-          "debug/manipulability_index", qos);
+  manipulability_index_debug =node->create_publisher<panda_interfaces::msg::DoubleStamped>("debug/manipulability_index", qos);
 
-  manipulability_index_grad_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/manipulability_index_grad", qos);
+  manipulability_index_grad_debug = node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/manipulability_index_grad", qos);
 
-  joint_limits_index_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleStamped>(
-          "debug/joint_limits_index", qos);
+  joint_limits_index_debug =node->create_publisher<panda_interfaces::msg::DoubleStamped>("debug/joint_limits_index", qos);
 
-  joint_limits_index_grad_debug =
-      node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>(
-          "debug/joint_limits_index_grad", qos);
+  joint_limits_index_grad_debug = node->create_publisher<panda_interfaces::msg::DoubleArrayStamped>("debug/joint_limits_index_grad", qos);
 
-  min_singular_val_pub =
-      node->create_publisher<panda_interfaces::msg::DoubleStamped>(
-          panda_interface_names::min_singular_value_topic_name, qos);
+  min_singular_val_pub =node->create_publisher<panda_interfaces::msg::DoubleStamped>(panda_interface_names::min_singular_value_topic_name, qos);
 
   RCLCPP_INFO(node->get_logger(), "Created pubs correctly");
 }
