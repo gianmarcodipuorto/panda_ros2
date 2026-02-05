@@ -1,5 +1,5 @@
 #! /bin/bash
 
-ros2 lifecycle set /impedance_controller configure
+ros2 lifecycle set /panda_joint_velocities_bridge configure
 sleep 2
-ros2 lifecycle set /impedance_controller activate
+ros2 lifecycle set /panda_joint_velocities_bridge activate

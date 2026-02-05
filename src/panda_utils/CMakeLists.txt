@@ -120,6 +120,10 @@ add_executable(panda_joint_velocities_bridge ./src/panda_joint_velocities_bridge
 ament_target_dependencies(panda_joint_velocities_bridge rclcpp panda_interfaces std_msgs tf2_eigen tf2 tf2_msgs sensor_msgs pinocchio ament_index_cpp rclcpp_lifecycle realtime_tools tf2_geometry_msgs std_srvs geometry_msgs)
 target_link_libraries(panda_joint_velocities_bridge robot_model franka)
 
+add_executable(simple_velocity_example ./src/simple_velocity_example.cpp)
+ament_target_dependencies(simple_velocity_example rclcpp panda_interfaces std_msgs tf2_eigen tf2)
+target_link_libraries(simple_velocity_example franka)
+
 install(TARGETS
   send_joints_effort_server
   # send_joints_effort_simple_client
@@ -136,6 +140,7 @@ install(TARGETS
   # human_presence
   frame_publisher
   panda_joint_velocities_bridge
+  simple_velocity_example
   DESTINATION lib/${PROJECT_NAME}
 )
 
